@@ -55,13 +55,14 @@ This notebook builds both wake-word models from openly licensed data, all of it 
 #@title Connect Google Drive and check the GPU
 from google.colab import drive
 drive.mount('/content/drive')
-import os, subprocess
+import os, shutil, subprocess
 RUN = 'uno-v1'  #@param {type:"string"}
 WORK = f'/content/drive/MyDrive/wakeword/{RUN}'
 os.makedirs(WORK, exist_ok=True)
 os.environ['WORK'] = WORK
 print('Saving to', WORK)
-print(subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader'], capture_output=True, text=True).stdout or 'No GPU: switch the runtime to T4 GPU for faster training.')
+gpu = shutil.which('nvidia-smi') and subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader'], capture_output=True, text=True).stdout
+print(gpu or 'No GPU: switch the runtime to T4 GPU for training, or set features_use_cuda: false in the configuration to run on CPU.')
 """),
         code("""
 #@title Install dependencies
