@@ -63,7 +63,8 @@ builder.Services.AddRateLimiter(o =>
 });
 
 var corsOrigins = config.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(corsOrigins).WithMethods("POST").WithHeaders("Authorization", "Content-Type")));
+string[] corsHeaders = devHeader ? ["Authorization", "Content-Type", DevHeaderAuthenticationHandler.Header] : ["Authorization", "Content-Type"];
+builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(corsOrigins).WithMethods("POST").WithHeaders(corsHeaders)));
 
 var app = builder.Build();
 
