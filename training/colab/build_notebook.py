@@ -118,15 +118,23 @@ Edit here if needed, for example the near-miss phrases or `positives_per_phrase`
         code("""
 #@title 9. (Optional) Pack the base for Wake Word Studio
 # Wake Word Studio trains new phrases on your own machine, reusing this run's background audio,
-# noise and models. This writes one file to download: about 4-5 GB.
-import os, tarfile
+# noise and models. This writes one file to download: about 4-5 GB, so it needs that much free Drive space.
+PACK_STUDIO_BASE = False  #@param {type:"boolean"}
+import os, shutil, tarfile
 out = f'{WORK}/studio_base.tar'
-if not os.path.exists(out):
-    with tarfile.open(out + '.tmp', 'w') as t:
+if not PACK_STUDIO_BASE:
+    print('Skipped. Tick PACK_STUDIO_BASE and run this cell to pack the Studio base.')
+elif not os.path.exists(out):
+    # Build on the Colab disk, then copy once: writing GBs into the Drive mount piecemeal can drop it.
+    local = '/content/studio_base.tar'
+    with tarfile.open(local, 'w') as t:
         for rel in ['assets', 'noise/bank.npy', 'negatives']:
             t.add(os.path.join(WORK, rel), arcname=f'studio_base/{rel}')
+    shutil.copy(local, out + '.tmp')
     os.replace(out + '.tmp', out)
-print(f'{out}: {os.path.getsize(out) / 2**30:.1f} GB. Download it from Google Drive (wakeword/{RUN}/studio_base.tar).')
+    os.remove(local)
+if os.path.exists(out):
+    print(f'{out}: {os.path.getsize(out) / 2**30:.1f} GB. Download it from Google Drive (wakeword/{RUN}/studio_base.tar).')
 """),
         md("""
 ## (Optional) Recalibrate a finished run
