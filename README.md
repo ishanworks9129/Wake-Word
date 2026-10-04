@@ -13,8 +13,9 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 | `training/wakeword_train/` | Wake word training pipeline (Piper voices, open negatives, openWakeWord features, ONNX export) | Built, smoke-tested |
 | `training/colab/` | One-file Colab notebook that runs the pipeline on a free GPU | Ready to run |
 | `training/eval/`, `training/data/` | Section 3 metrics, detector mirror, dataset manifest checks | Built, tested |
-| `testdata/golden/` | Cases that the C#, Python and (later) TypeScript detectors must all pass | In use |
-| `src/WakeWord.Onnx` | ONNX Runtime implementations of `IWakeWordModel` and `IVoiceActivityDetector` | Next |
+| `testdata/` | Golden detector cases and a smoke model package with streaming golden vectors, shared by C#, Python and (later) TypeScript | In use |
+| `models/` | Models the apps ship: Silero VAD now, the Colab output in `models/wakeword/` | VAD in place |
+| `src/WakeWord.Onnx` | ONNX Runtime wake word model (streaming features, both keywords), Silero VAD, model package loader, Picovoice-style `KeywordSpotter` | Built, golden-tested against Python |
 | `src/WakeWord.Maui` | MAUI app, per-platform `IAudioCaptureService`, Android foreground service | Next |
 | `web/` | TypeScript AudioWorklet capture + `onnxruntime-web` | Later |
 
@@ -23,9 +24,22 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 The .NET 10 SDK is required.
 
 ```sh
-dotnet test                                                  # 38 tests: core + broker
-cd training && python -m unittest discover -s tests -t .     # 27 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
+dotnet test                                                  # 47 tests: core, ONNX runtime, broker
+cd training && python -m unittest discover -s tests -t .     # 20 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
 ```
+
+## Use the wake word in C#
+
+Picovoice-style, for any app that just needs "did they say it?":
+
+```csharp
+using var spotter = KeywordSpotter.Create("models/wakeword", ["hey_uno", "hello_uno"], sensitivities: [0.5, 0.5]);
+int keyword = spotter.Process(frame);   // 1280 samples of 16 kHz mono PCM; -1, or the index of the keyword heard
+```
+
+Sensitivity runs from 0 (fewest false accepts) to 1 (fewest misses) and is calibrated per keyword by the training run.
+For the full always-on flow (VAD gating, pre-roll, Deepgram handoff), use `WakeWordController` with
+`OnnxWakeWordModel`, `SileroVad` and `package.KeywordOptions(...)`.
 
 ## Run the token broker locally
 
