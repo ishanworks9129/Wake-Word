@@ -16,6 +16,8 @@ from . import CLASSIFIER_FRAMES, EMBEDDING_DIM, FRAME_SAMPLES
 MEL_WINDOW = 76  # mel frames per embedding
 MEL_STEP = 8  # mel frames per 1280-sample chunk
 MEL_CONTEXT = 160 * 3  # extra samples fed to the mel model per streaming chunk
+MEL_FFT, MEL_HOP = 512, 160  # the mel model rejects input under 512 samples; frames = (N - 512) // 160 + 1
+MIN_EMBED_SAMPLES = MEL_FFT + (MEL_WINDOW - 1) * MEL_HOP  # shortest audio that yields one embedding
 
 
 def mel_transform(spec: np.ndarray) -> np.ndarray:
@@ -55,7 +57,7 @@ class FeatureExtractor:
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
         """int16 audio of any length -> [T, 96], one embedding per 1280 samples once 76 mel frames exist."""
-        if audio.shape[0] < 400:
+        if audio.shape[0] < MIN_EMBED_SAMPLES:
             return np.empty((0, EMBEDDING_DIM), dtype=np.float32)
         spec = self.melspectrogram(audio)
         starts = range(0, spec.shape[0] - MEL_WINDOW + 1, MEL_STEP)

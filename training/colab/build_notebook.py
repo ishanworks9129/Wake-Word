@@ -12,7 +12,7 @@ from pathlib import Path
 
 TRAINING = Path(__file__).resolve().parents[1]
 OUT = Path(__file__).with_name("train_wake_words.ipynb")
-CODE_FILES = sorted([*TRAINING.glob("wakeword_train/*.py"), TRAINING / "eval" / "__init__.py", TRAINING / "eval" / "detector.py"])
+CODE_FILES = sorted([*TRAINING.glob("wakeword_train/*.py"), *TRAINING.glob("eval/*.py")])
 
 
 def md(text: str) -> dict:
