@@ -158,7 +158,7 @@ def main() -> None:
     profiles = yaml.safe_load((Path(__file__).with_name("profiles.yaml")).read_text(encoding="utf-8"))
     studio = Studio(JobStore(args.jobs.resolve()), args.base.resolve(), args.template.resolve(), profiles, args.profile)
     state = studio.readiness()
-    print(f"Base {args.base}: {'ready' if state['ready'] else 'missing ' + ', '.join(state['missing'])}; background audio {state['negative_hours']} h")
+    print(f"Base {args.base}: {'ready' if state['ready'] else 'missing ' + ', '.join(state['missing'])}; background audio {state['negative_hours']} h", flush=True)
     uvicorn.run(create_app(studio, args.static, args.vad), host=args.host, port=args.port, log_level="warning")
 
 

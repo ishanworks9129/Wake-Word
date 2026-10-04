@@ -10,4 +10,5 @@ if [ ! -f ~/ww/.venv/bin/activate ]; then
   exit 1
 fi
 . ~/ww/.venv/bin/activate
+export PYTHONUNBUFFERED=1  # VS Code waits for the "Base ..." line before opening the browser
 exec python -m studio.app --base "$base" --template configs/uno.yaml --jobs ~/ww/studio-jobs --host 0.0.0.0

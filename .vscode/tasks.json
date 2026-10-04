@@ -1,5 +1,6 @@
 {
   // Run with Ctrl+Shift+P -> "Tasks: Run Task", or Ctrl+Shift+B for the web demo (the default build task).
+  // WSL tasks are "process" tasks: no PowerShell in between, so the space in the folder path can't split arguments.
   "version": "2.0.0",
   "inputs": [
     {
@@ -55,8 +56,10 @@
     },
     {
       "label": "Studio: server",
-      "type": "shell",
-      "command": "wsl -d Ubuntu --cd \"${workspaceFolder}\" -- bash training/studio/start_wsl.sh ${input:studioBase}",
+      "type": "process",
+      "command": "wsl.exe",
+      "args": ["-d", "Ubuntu", "--", "bash", "training/studio/start_wsl.sh", "${input:studioBase}"],
+      "options": { "cwd": "${workspaceFolder}" },
       "dependsOn": "Studio: build page",
       "isBackground": true,
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
@@ -77,8 +80,10 @@
     },
     {
       "label": "Studio: set up WSL environment (once)",
-      "type": "shell",
-      "command": "wsl -d Ubuntu --cd \"${workspaceFolder}\" -- bash training/studio/setup_wsl.sh",
+      "type": "process",
+      "command": "wsl.exe",
+      "args": ["-d", "Ubuntu", "--", "bash", "training/studio/setup_wsl.sh"],
+      "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "always", "panel": "shared", "clear": true },
       "problemMatcher": []
     }
