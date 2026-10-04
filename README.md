@@ -26,7 +26,7 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 The .NET 10 SDK is required.
 
 ```sh
-dotnet test                                                  # 58 tests: core, ONNX runtime, broker, recorder
+dotnet test                                                  # 59 tests: core, ONNX runtime, broker, recorder
 node --test tests/recorder-js/wav.test.mjs                   # recorder page helpers
 cd web && npm install && npm test                            # 35 tests: browser client, same golden data
 cd training && python -m unittest discover -s tests -t .     # 20 tests; the pipeline tests need numpy, scipy, torch, onnxruntime

@@ -22,6 +22,7 @@
     <None Include="..\..\testdata\models\smoke\**" LinkBase="testdata\models\smoke" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\testdata\audio\**" LinkBase="testdata\audio" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\models\vad\**" LinkBase="models\vad" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\models\wakeword\**" LinkBase="models\wakeword" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

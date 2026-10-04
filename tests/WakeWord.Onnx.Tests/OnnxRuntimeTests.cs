@@ -9,7 +9,8 @@ namespace WakeWord.Onnx.Tests;
 
 /// <summary>
 /// testdata/models/smoke is a real (tiny, untrained-quality) package exported by the training pipeline,
-/// including golden.json: the Python streaming reference's per-chunk embeddings and scores.
+/// including golden.json: the Python streaming reference's per-chunk embeddings and scores. The golden
+/// checks also run against the shipped package in models/wakeword, so a new model can't ship unchecked.
 /// </summary>
 public class OnnxRuntimeTests
 {
@@ -17,19 +18,26 @@ public class OnnxRuntimeTests
     private static readonly ModelPackage Package = ModelPackage.LoadFromDirectory(Smoke);
     private static readonly JsonElement Golden = JsonDocument.Parse(File.ReadAllText(Path.Combine(Smoke, "golden.json"))).RootElement;
 
-    private static short[] GoldenAudio() => Golden.GetProperty("audio_int16").EnumerateArray().Select(v => (short)v.GetInt32()).ToArray();
+    private static short[] GoldenAudio() => GoldenAudio(Golden);
+
+    private static short[] GoldenAudio(JsonElement golden) =>
+        golden.GetProperty("audio_int16").EnumerateArray().Select(v => (short)v.GetInt32()).ToArray();
 
     private static ReadOnlySpan<short> Chunk(short[] audio, int i) => audio.AsSpan(i * 1280, 1280);
 
-    [Fact]
-    public void Streaming_scores_and_embeddings_match_the_python_reference()
+    [Theory]
+    [InlineData("testdata/models/smoke")]
+    [InlineData("models/wakeword")]
+    public void Streaming_scores_and_embeddings_match_the_python_reference(string packageDir)
     {
-        using var model = new OnnxWakeWordModel(Package);
-        var audio = GoldenAudio();
+        var dir = Path.Combine(AppContext.BaseDirectory, packageDir);
+        var golden = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "golden.json"))).RootElement;
+        using var model = new OnnxWakeWordModel(ModelPackage.LoadFromDirectory(dir));
+        var audio = GoldenAudio(golden);
         var scores = new double[model.Keywords.Count];
         var checkedScores = 0;
 
-        foreach (var chunk in Golden.GetProperty("chunks").EnumerateArray())
+        foreach (var chunk in golden.GetProperty("chunks").EnumerateArray())
         {
             var i = chunk.GetProperty("chunk").GetInt32();
             model.AppendFrame(Chunk(audio, i));
