@@ -1,0 +1,6 @@
+path,kind,split,source,url,license,license_url,retrieved,duration_seconds,speaker_id,release_id
+tts/en_US-libritts_r-medium,positive,train,Piper voice en_US-libritts_r-medium,https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-04,,,
+negatives/librispeech_train,negative,train,librispeech_train,https://www.openslr.org/12/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-04,1080013.4,,
+negatives/musan,negative,train,musan,https://www.openslr.org/17/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-04,391957.4,,
+negatives/librispeech_val,negative,val,librispeech_val,https://www.openslr.org/12/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-04,68248.9,,
+rir/mit,rir,train,MIT Acoustical Reverberation Scene Statistics Survey,https://mcdermottlab.mit.edu/Reverb/IRMAudio/Audio.zip,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-04,,,

@@ -1,0 +1,178 @@
+{
+  "format": "wakeword-models/1",
+  "run": "uno-v0",
+  "created": "2026-10-04T13:08:06+00:00",
+  "sample_rate": 16000,
+  "frame_samples": 1280,
+  "features": {
+    "melspectrogram": "melspectrogram.onnx",
+    "embedding": "embedding_model.onnx",
+    "mel_transform": "x / 10 + 2",
+    "mel_context_samples": 480,
+    "embedding_window": 76,
+    "embedding_step": 8,
+    "classifier_frames": 16
+  },
+  "keywords": [
+    {
+      "id": "hey_uno",
+      "phrase": "Hey UNO",
+      "model": "hey_uno.onnx",
+      "input": "input",
+      "output": "score",
+      "default_sensitivity": 0.5,
+      "sensitivity_table": [
+        [
+          0.0,
+          0.999
+        ],
+        [
+          0.1,
+          0.999
+        ],
+        [
+          0.2,
+          0.999
+        ],
+        [
+          0.3,
+          0.03
+        ],
+        [
+          0.4,
+          0.02
+        ],
+        [
+          0.5,
+          0.02
+        ],
+        [
+          0.6,
+          0.02
+        ],
+        [
+          0.7,
+          0.02
+        ],
+        [
+          0.8,
+          0.02
+        ],
+        [
+          0.9,
+          0.02
+        ],
+        [
+          1.0,
+          0.02
+        ]
+      ],
+      "detector": {
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "min_threshold": 0.01,
+        "max_threshold": 0.9999
+      },
+      "transcript_variants": [
+        "hey you know",
+        "hey you no",
+        "hey juno",
+        "hey oono",
+        "hey u no",
+        "hey uno"
+      ],
+      "validation": {
+        "threshold": 0.02,
+        "recall": 0.9315977539561,
+        "fa_per_hour": 0.05274904582837102,
+        "negative_hours": 18.95768888888889,
+        "positives": 1959
+      }
+    },
+    {
+      "id": "hello_uno",
+      "phrase": "Hello UNO",
+      "model": "hello_uno.onnx",
+      "input": "input",
+      "output": "score",
+      "default_sensitivity": 0.5,
+      "sensitivity_table": [
+        [
+          0.0,
+          0.999
+        ],
+        [
+          0.1,
+          0.999
+        ],
+        [
+          0.2,
+          0.999
+        ],
+        [
+          0.3,
+          0.02
+        ],
+        [
+          0.4,
+          0.02
+        ],
+        [
+          0.5,
+          0.02
+        ],
+        [
+          0.6,
+          0.02
+        ],
+        [
+          0.7,
+          0.02
+        ],
+        [
+          0.8,
+          0.02
+        ],
+        [
+          0.9,
+          0.02
+        ],
+        [
+          1.0,
+          0.02
+        ]
+      ],
+      "detector": {
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "min_threshold": 0.01,
+        "max_threshold": 0.9999
+      },
+      "transcript_variants": [
+        "hello you know",
+        "hello you no",
+        "hello juno",
+        "hello oono",
+        "hello u no",
+        "hello uno"
+      ],
+      "validation": {
+        "threshold": 0.02,
+        "recall": 0.9537037037037037,
+        "fa_per_hour": 0.0,
+        "negative_hours": 18.95768888888889,
+        "positives": 2052
+      }
+    }
+  ],
+  "training_hours": {
+    "librispeech_train": 300.0,
+    "musan": 108.88,
+    "librispeech_val": 18.96
+  },
+  "notes": [
+    "Provisional v0: positives are synthetic (Piper) only; negatives are read speech, music and noise.",
+    "Recall is measured on held-out synthetic voices and FA/hour on read speech, so real-world numbers will differ. Re-measure on the real-recording test set (plan 5.3) before release.",
+    "All training data is commercially licensed; see DATASET_MANIFEST.csv."
+  ]
+}
