@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WakeWord.Core/WakeWord.Core.csproj" />
+    <Project Path="src/WakeWord.TokenBroker/WakeWord.TokenBroker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WakeWord.Core.Tests/WakeWord.Core.Tests.csproj" />
+    <Project Path="tests/WakeWord.TokenBroker.Tests/WakeWord.TokenBroker.Tests.csproj" />
+  </Folder>
+</Solution>

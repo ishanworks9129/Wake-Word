@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+
+__pycache__/
+*.pyc
+.venv/
+
+# Training audio and features never go in git; DATASET_MANIFEST.csv does.
+training/audio/
+training/features/
+training/models/
+*.wav
+*.flac
+*.npy

@@ -1,0 +1,72 @@
+{
+  "description": "Shared detector golden cases. The C# WakeWordDetector, the TypeScript web detector and training/eval/detector.py must all produce expected_fire_frames exactly. Frame i ends at sample (i + 1) * frame_samples.",
+  "sample_rate": 16000,
+  "frame_samples": 1280,
+  "cases": [
+    {
+      "name": "consecutive-frames-and-refractory",
+      "options": {
+        "base_threshold": 0.5,
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "adaptive": { "points": [[-60, 0.0], [-30, 0.1]], "min_threshold": 0.2, "max_threshold": 0.95 }
+      },
+      "noise_floor_dbfs": -70,
+      "scores": [
+        0.1, 0.6, 0.7, 0.4, 0.6, 0.6, 0.6, 0.9, 0.9, 0.9, 0.9,
+        0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9,
+        0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9,
+        0.2, 0.6, 0.6, 0.6
+      ],
+      "expected_fire_frames": [6, 27]
+    },
+    {
+      "name": "noisy-room-raises-threshold",
+      "options": {
+        "base_threshold": 0.5,
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "adaptive": { "points": [[-60, 0.0], [-30, 0.1]], "min_threshold": 0.2, "max_threshold": 0.95 }
+      },
+      "noise_floor_dbfs": -30,
+      "scores": [0.55, 0.55, 0.55, 0.65, 0.65, 0.65],
+      "expected_fire_frames": [5]
+    },
+    {
+      "name": "interpolated-offset",
+      "options": {
+        "base_threshold": 0.5,
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "adaptive": { "points": [[-60, 0.0], [-30, 0.1]], "min_threshold": 0.2, "max_threshold": 0.95 }
+      },
+      "noise_floor_dbfs": -45,
+      "scores": [0.52, 0.57, 0.57, 0.57],
+      "expected_fire_frames": [3]
+    },
+    {
+      "name": "threshold-clamped-to-max",
+      "options": {
+        "base_threshold": 0.9,
+        "consecutive_frames": 3,
+        "refractory_seconds": 1.5,
+        "adaptive": { "points": [[-60, 0.0], [-30, 0.1]], "min_threshold": 0.2, "max_threshold": 0.95 }
+      },
+      "noise_floor_dbfs": -10,
+      "scores": [0.94, 0.96, 0.96, 0.96],
+      "expected_fire_frames": [3]
+    },
+    {
+      "name": "per-frame-noise-and-single-frame-mode",
+      "options": {
+        "base_threshold": 0.5,
+        "consecutive_frames": 1,
+        "refractory_seconds": 0.5,
+        "adaptive": { "points": [], "min_threshold": 0.2, "max_threshold": 0.95 }
+      },
+      "noise_floor_dbfs": [-70, -70, -70, -70, -70, -70, -70, -70, -70, -70],
+      "scores": [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6],
+      "expected_fire_frames": [0, 7]
+    }
+  ]
+}
