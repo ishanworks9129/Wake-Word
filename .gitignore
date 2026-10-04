@@ -13,5 +13,9 @@ training/audio/
 training/features/
 training/models/
 *.wav
+!testdata/audio/*.wav
 *.flac
 *.npy
+
+# Collected voice recordings are personal data: never commit them.
+recordings/
