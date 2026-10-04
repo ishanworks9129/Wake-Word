@@ -32,6 +32,15 @@ class EmbeddingStore:
     def source_progress(self, source: str) -> dict:
         return self.index["sources"].get(source, {"next_member": {}, "frames": 0})
 
+    def exhausted(self, source: str, key: str) -> bool:
+        """True once an archive (or a "files" list) was read to the end, so a re-run need not re-stream it."""
+        return key in self.source_progress(source).get("exhausted", [])
+
+    def mark_exhausted(self, source: str, key: str) -> None:
+        progress = self._pending_progress.setdefault(source, json.loads(json.dumps(self.source_progress(source))))
+        progress.setdefault("exhausted", []).append(key)
+        self.flush()
+
     def hours(self, source: str | None = None) -> float:
         if source is None:
             return sum(s["frames"] for s in self.index["shards"]) / FRAMES_PER_HOUR

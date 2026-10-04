@@ -11,7 +11,7 @@ import os
 import numpy as np
 import onnxruntime as ort
 
-from . import CLASSIFIER_FRAMES, EMBEDDING_DIM, FRAME_SAMPLES
+from . import CLASSIFIER_FRAMES, EMBEDDING_DIM, FRAME_SAMPLES, SAMPLE_RATE
 
 MEL_WINDOW = 76  # mel frames per embedding
 MEL_STEP = 8  # mel frames per 1280-sample chunk
@@ -65,6 +65,19 @@ class FeatureExtractor:
             return np.empty((0, EMBEDDING_DIM), dtype=np.float32)
         windows = np.stack([spec[s:s + MEL_WINDOW] for s in starts])
         return self.embed_mel_windows(windows)
+
+    def embed_long(self, audio: np.ndarray, chunk_samples: int = SAMPLE_RATE * 600) -> np.ndarray:
+        """embed() for recordings hours long, in bounded memory, with an identical result.
+
+        Each chunk starts where the previous chunk's next embedding would start (a multiple of 1280
+        samples, so mel frames stay on the same grid), so chunking never drops or duplicates an embedding.
+        """
+        out, pos = [], 0
+        while audio.shape[0] - pos >= MIN_EMBED_SAMPLES:
+            emb = self.embed(audio[pos:pos + max(chunk_samples, MIN_EMBED_SAMPLES)])
+            out.append(emb)
+            pos += emb.shape[0] * FRAME_SAMPLES
+        return np.concatenate(out) if out else np.empty((0, EMBEDDING_DIM), dtype=np.float32)
 
     def embed_batch(self, clips: np.ndarray, batch_size: int = 64) -> np.ndarray:
         """int16 [B, N] equal-length clips -> [B, T, 96]."""

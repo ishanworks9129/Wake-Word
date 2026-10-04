@@ -115,6 +115,35 @@ def iter_tar_audio(
             time.sleep(10 * (attempt + 1))
 
 
+def iter_file_audio(urls: list[str], skip_members: int = 0, retries: int = 5) -> Iterator[tuple[int, str, np.ndarray]]:
+    """Fetches individual remote audio files, yielding (index in urls, url, int16 16 kHz audio).
+
+    Resumes like iter_tar_audio with skip_members=<last index + 1>. A file that is missing (404) or
+    undecodable is skipped with a message rather than ending the run.
+    """
+    for index in range(skip_members, len(urls)):
+        url = urls[index]
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, timeout=120)
+                if r.status_code == 404:
+                    print(f"skipping missing {url}")
+                    break
+                r.raise_for_status()
+                try:
+                    audio = decode(r.content)
+                except (RuntimeError, sf.LibsndfileError) as e:
+                    print(f"skipping undecodable {url}: {e}")
+                    break
+                yield index, url, audio
+                break
+            except requests.RequestException as e:
+                if attempt == retries - 1:
+                    raise
+                print(f"fetching {url} failed ({e}); retrying")
+                time.sleep(10 * (attempt + 1))
+
+
 def load_rirs(zip_path: Path, max_seconds: float = 1.0) -> list[np.ndarray]:
     """Room impulse responses from a zip of wav files, as float32 at 16 kHz, peak-normalised."""
     rirs = []

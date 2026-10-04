@@ -90,7 +90,9 @@ class PhraseEvaluation:
         return d
 
 
-THRESHOLDS = np.unique(np.round(np.concatenate([np.arange(0.02, 0.99, 0.01), np.arange(0.99, 0.9995, 0.001)]), 4))
+# Down to the detectors' min_threshold (0.01): real voices score lower than the synthetic validation clips.
+THRESHOLDS = np.unique(np.round(np.concatenate([
+    np.arange(0.01, 0.02, 0.0025), np.arange(0.02, 0.99, 0.01), np.arange(0.99, 0.9995, 0.001)]), 4))
 
 
 def sweep(

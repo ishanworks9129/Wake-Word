@@ -106,6 +106,64 @@ class StoreTests(unittest.TestCase):
             w = sample_windows(data, 50, np.random.default_rng(0))
             self.assertEqual(w.shape, (50, 16, 96))
 
+    def test_exhausted_parts_survive_reopen(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = EmbeddingStore(Path(d))
+            store.append("src", "u1", 0, np.zeros((5, 96), np.float32))
+            store.mark_exhausted("src", "u1")
+            reopened = EmbeddingStore(Path(d))
+            self.assertTrue(reopened.exhausted("src", "u1"))
+            self.assertFalse(reopened.exhausted("src", "u2"))
+            self.assertEqual(reopened.load().shape, (5, 96))
+
+
+class FeatureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from wakeword_train.features import FeatureExtractor
+
+        smoke = ROOT.parent / "testdata" / "models" / "smoke"
+        cls.fx = FeatureExtractor(str(smoke / "melspectrogram.onnx"), str(smoke / "embedding_model.onnx"), threads=1)
+
+    def test_long_audio_in_chunks_matches_one_pass(self):
+        audio = (np.random.default_rng(0).normal(size=16000 * 20) * 3000).astype(np.int16)
+        whole = self.fx.embed(audio)
+        for chunk in (16000 * 3, 13000, 12512):
+            np.testing.assert_allclose(self.fx.embed_long(audio, chunk_samples=chunk), whole, atol=1e-4)
+
+    def test_audio_too_short_for_one_embedding_is_skipped(self):
+        from wakeword_train.features import MIN_EMBED_SAMPLES
+
+        for n in (0, 418, 511, MIN_EMBED_SAMPLES - 1):  # the mel model rejects under 512 samples
+            self.assertEqual(self.fx.embed(np.zeros(n, np.int16)).shape, (0, 96))
+            self.assertEqual(self.fx.embed_long(np.zeros(n, np.int16)).shape, (0, 96))
+        self.assertEqual(self.fx.embed(np.zeros(MIN_EMBED_SAMPLES, np.int16)).shape, (1, 96))
+
+
+class FileSourceTests(unittest.TestCase):
+    def test_missing_files_are_skipped_and_resume_by_index(self):
+        import io
+        import wave
+        from unittest import mock
+
+        from wakeword_train import sources
+
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(np.arange(1600, dtype=np.int16).tobytes())
+
+        def get(url, timeout):
+            return mock.Mock(status_code=404 if "gone" in url else 200, content=buf.getvalue(), raise_for_status=lambda: None)
+
+        urls = ["https://x/a.wav", "https://x/gone.wav", "https://x/c.wav"]
+        with mock.patch.object(sources.requests, "get", side_effect=get):
+            got = [(i, u, a.shape[0]) for i, u, a in sources.iter_file_audio(urls)]
+            self.assertEqual([(0, urls[0], 1600), (2, urls[2], 1600)], got)
+            self.assertEqual([2], [i for i, _, _ in sources.iter_file_audio(urls, skip_members=2)])
+
 
 class ConfigTests(unittest.TestCase):
     def test_shipped_configs_load(self):
@@ -113,6 +171,7 @@ class ConfigTests(unittest.TestCase):
             cfg = load_config(ROOT / "configs" / name)
             self.assertEqual({p.id for p in cfg.phrases}, {"hey_uno", "hello_uno"})
             self.assertTrue(all("NC" not in s.license.upper() for s in cfg.negatives))
+            self.assertTrue(all(s.kind in ("tar", "files") for s in cfg.negatives))
 
     def test_overrides_and_unknown_keys(self):
         cfg = load_config(ROOT / "configs" / "smoke.yaml", {"train.steps": 7})

@@ -49,7 +49,7 @@ class TtsConfig:
 @dataclass
 class NegativeSource(Licensed):
     name: str
-    kind: str  # "tar": a .tar/.tar.gz of audio files
+    kind: str  # "tar": each url is a .tar/.tar.gz of audio files; "files": each url is one audio file
     urls: list[str]
     split: str  # "train" or "val"
     max_hours: float

@@ -29,7 +29,7 @@ The .NET 10 SDK is required.
 dotnet test                                                  # 59 tests: core, ONNX runtime, broker, recorder
 node --test tests/recorder-js/wav.test.mjs                   # recorder page helpers
 cd web && npm install && npm test                            # 35 tests: browser client, same golden data
-cd training && python -m unittest discover -s tests -t .     # 20 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
+cd training && python -m unittest discover -s tests -t .     # 32 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
 ```
 
 ## Use the wake word in C#

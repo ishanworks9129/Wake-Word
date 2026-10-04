@@ -24,8 +24,8 @@ import yaml
 from . import SAMPLE_RATE
 from .augment import Augmenter, NoiseBank, colored_noise
 from .config import AugmentConfig, Config, load_config
-from .features import FeatureExtractor
-from .sources import download, iter_tar_audio, load_rirs
+from .features import MIN_EMBED_SAMPLES, FeatureExtractor
+from .sources import download, iter_file_audio, iter_tar_audio, load_rirs
 from .store import EmbeddingStore, FRAMES_PER_HOUR
 from .tts import ClipSet, PiperSynth, generate, is_held_out
 
@@ -36,9 +36,10 @@ EVAL_TRAILING = SAMPLE_RATE
 
 
 class Run:
-    def __init__(self, cfg: Config, work: Path):
+    def __init__(self, cfg: Config, work: Path, negatives_split: str | None = None):
         self.cfg = cfg
         self.work = work
+        self.negatives_split = negatives_split  # limits the negatives step to "train" or "val" sources
         # Background audio, noise and downloaded models can be shared by many runs (Wake Word Studio).
         self.shared = Path(cfg.shared_dir) if cfg.shared_dir else work
         for d in ("steps", "clips", "features", "models", "eval", "export", "preview"):
@@ -187,18 +188,18 @@ class Run:
                 noise_buf = []
 
         for src in cfg.negatives:
+            if self.negatives_split and src.split != self.negatives_split:
+                continue
             store = self.store(src.split)
-            for url in src.urls:
-                if store.hours(src.name) >= src.max_hours:
-                    break
-                skip = store.source_progress(src.name)["next_member"].get(url, 0)
-                accept = (lambda name, inc=src.include: not inc or any(s in name for s in inc))
-                print(f"{src.name}: streaming {url} from member {skip} ({store.hours(src.name):.1f}/{src.max_hours} h)")
+            for key, items in self._negative_streams(src, store):
                 last_report = time.time()
-                for index, name, audio in iter_tar_audio(url, accept, skip_members=skip):
-                    emb = fx.embed(audio)
+                for index, name, audio in items:
+                    # Whole recordings can be hours long (VoxPopuli sessions): keep only what the budget needs.
+                    have = store.hours(src.name) + store._buf_frames / FRAMES_PER_HOUR
+                    audio = audio[: int((src.max_hours - have) * 3600 * SAMPLE_RATE) + MIN_EMBED_SAMPLES]
+                    emb = fx.embed_long(audio)
                     if emb.shape[0]:
-                        store.append(src.name, url, index, emb)
+                        store.append(src.name, key, index, emb)
                     if noise_samples < noise_target and any(s in name for s in src.noise_bank):
                         noise_buf.append(audio)
                         noise_samples += audio.shape[0]
@@ -209,6 +210,8 @@ class Run:
                         last_report = time.time()
                     if store.hours(src.name) + store._buf_frames / FRAMES_PER_HOUR >= src.max_hours:
                         break
+                else:
+                    store.mark_exhausted(src.name, key)
                 store.flush()
                 flush_noise()
 
@@ -221,6 +224,25 @@ class Run:
             if self.store(split).hours() == 0:
                 raise RuntimeError(f"no {split} negative audio was collected; check the negatives sources")
         return {"hours": hours, "noise_bank_hours": bank.shape[0] / SAMPLE_RATE / 3600}
+
+    def _negative_streams(self, src, store: EmbeddingStore):
+        """(progress key, audio iterator) for each part of a source still to read."""
+        if src.kind == "files":
+            parts = [("files", lambda skip: iter_file_audio(src.urls, skip_members=skip))]
+        elif src.kind == "tar":
+            accept = (lambda name: not src.include or any(s in name for s in src.include))
+            parts = [(url, lambda skip, url=url: iter_tar_audio(url, accept, skip_members=skip)) for url in src.urls]
+        else:
+            raise ValueError(f"{src.name}: unknown negatives kind {src.kind!r}; use 'tar' or 'files'")
+        for key, open_part in parts:
+            if store.hours(src.name) >= src.max_hours:
+                return
+            if store.exhausted(src.name, key):
+                continue
+            skip = store.source_progress(src.name)["next_member"].get(key, 0)
+            where = f"{len(src.urls)} files from file {skip}" if src.kind == "files" else f"{key} from member {skip}"
+            print(f"{src.name}: streaming {where} ({store.hours(src.name):.1f}/{src.max_hours} h)")
+            yield key, open_part(skip)
 
     def features_step(self) -> dict:
         cfg = self.cfg
@@ -342,16 +364,19 @@ class Run:
             classifiers[p.id] = path
         golden = golden_vectors(self.features(), classifiers, self.eval_audio(cfg.phrases[0].id)[0])
         evaluations = {p.id: json.loads((self.work / "eval" / f"{p.id}.json").read_text()) for p in cfg.phrases}
+        hours = self.hours()
+        val_sources = ", ".join(f"{src.name} ({hours.get(src.name, 0):.0f} h)" for src in cfg.negatives
+                                if src.split == "val" and hours.get(src.name, 0) > 0)
         notes = [
             "Provisional v0: positives are synthetic (Piper) only; negatives are read speech, music and noise.",
-            "Recall is measured on held-out synthetic voices and FA/hour on read speech, so real-world numbers will differ. "
+            f"Recall is measured on held-out synthetic voices and FA/hour on {val_sources}, so real-world numbers will differ. "
             "Re-measure on the real-recording test set (plan 5.3) before release.",
             "All training data is commercially licensed; see DATASET_MANIFEST.csv.",
         ]
         zip_path = write_package(
             cfg, out,
             {"melspectrogram": self.asset("melspectrogram.onnx"), "embedding": self.asset("embedding_model.onnx")},
-            classifiers, evaluations, self.hours(), golden, notes,
+            classifiers, evaluations, hours, golden, notes,
         )
         print(f"model package: {zip_path}")
         return {"zip": str(zip_path), "onnx_parity_max_diff": parity}
@@ -400,9 +425,10 @@ def write_wav(path: Path, audio: np.ndarray) -> None:
         w.writeframes(audio.astype(np.int16).tobytes())
 
 
-def run(config: Path, work: Path, steps: list[str], force: bool = False, overrides: dict | None = None) -> None:
+def run(config: Path, work: Path, steps: list[str], force: bool = False, overrides: dict | None = None,
+        negatives_split: str | None = None) -> None:
     cfg = load_config(config, overrides)
-    r = Run(cfg, work)
+    r = Run(cfg, work, negatives_split)
     handlers = {
         "setup": r.setup, "preview": r.preview, "tts": r.tts, "negatives": r.negatives,
         "features": r.features_step, "train": r.train_step, "evaluate": r.evaluate_step, "export": r.export_step,
@@ -425,13 +451,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--steps", default="all", help="comma-separated steps, or 'all'")
     ap.add_argument("--force", action="store_true", help="re-run steps already marked done")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a config value, e.g. train.steps=500")
+    ap.add_argument("--negatives-split", choices=["train", "val"], help="limit the negatives step to one split's sources")
     args = ap.parse_args(argv)
     steps = STEPS if args.steps == "all" else [s.strip() for s in args.steps.split(",")]
     unknown = [s for s in steps if s not in STEPS]
     if unknown:
         ap.error(f"unknown steps {unknown}; choose from {STEPS}")
     overrides = {k: yaml.safe_load(v) for k, v in (s.split("=", 1) for s in args.set)}
-    run(args.config, args.work, steps, args.force, overrides)
+    run(args.config, args.work, steps, args.force, overrides, args.negatives_split)
 
 
 if __name__ == "__main__":

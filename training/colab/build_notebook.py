@@ -45,7 +45,7 @@ This notebook builds both wake-word models from openly licensed data, all of it 
 | Setup | Downloads the feature models, the Piper voice and room recordings | 2 min |
 | Preview | Lets you listen to how the voices say each phrase | 1 min |
 | Voices | Generates 20,000 spoken examples per phrase, plus 20,000 near-misses | about 3 h (about 4 min per 2,000) |
-| Background audio | Streams about 440 hours of speech, music and noise and turns it into features | 1–3 h |
+| Background audio | Streams about 550 hours of speech, meetings, music and noise and turns it into features | 1.5–3.5 h |
 | Features | Mixes the examples into noisy rooms and computes features | 15–30 min |
 | Train | Trains one small classifier per phrase | 10–20 min |
 | Evaluate | Measures recall and false accepts per hour and calibrates sensitivity | 5 min |
@@ -126,6 +126,24 @@ if not os.path.exists(out):
             t.add(os.path.join(WORK, rel), arcname=f'studio_base/{rel}')
     os.replace(out + '.tmp', out)
 print(f'{out}: {os.path.getsize(out) / 2**30:.1f} GB. Download it from Google Drive (wakeword/{RUN}/studio_base.tar).')
+"""),
+        md("""
+## (Optional) Recalibrate a finished run
+Only for a run trained before the validation audio was extended (meetings and parliamentary sessions, not just audiobooks), such as `uno-v1`. New runs already include it, so skip this.
+
+Set `RUN` in the first cell to that run, run the cells down to *Configuration*, then tick **RECALIBRATE** below and run it. It downloads only the missing validation audio (about 110 hours), re-measures both models, recalibrates sensitivity and downloads a new zip. No retraining: about 30–60 minutes.
+"""),
+        code("""
+#@title 10. (Optional) Recalibrate on the extended validation audio
+RECALIBRATE = False  #@param {type:"boolean"}
+if RECALIBRATE:
+    get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
+                         '--steps negatives,evaluate,export --force --negatives-split val')
+    from google.colab import files
+    print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())
+    files.download(f'{WORK}/export/wakeword_models.zip')
+else:
+    print('Skipped. Tick RECALIBRATE and run this cell to recalibrate a finished run.')
 """),
         md("""
 ## What you get
