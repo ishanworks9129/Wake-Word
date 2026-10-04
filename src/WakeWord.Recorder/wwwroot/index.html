@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice Recording</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Help train "Hey UNO"</h1>
+      <p class="lede">Record a few short phrases (about 5 minutes) so the app learns to hear you.</p>
+    </header>
+
+    <section id="welcome" class="card">
+      <h2>1. Before you start</h2>
+      <form id="join-form">
+        <label>Invite code
+          <input id="invite" name="invite" autocomplete="off" required>
+        </label>
+
+        <div class="consent" id="consent-text" aria-live="polite">Loading consent form…</div>
+
+        <label class="check">
+          <input type="checkbox" id="agree" required>
+          <span>I have read the consent form above and agree to it.</span>
+        </label>
+
+        <details>
+          <summary>Optional: about you (helps us cover different voices)</summary>
+          <label>Age range
+            <select id="age"><option value="">Prefer not to say</option><option>18–24</option><option>25–34</option><option>35–44</option><option>45–54</option><option>55–64</option><option>65+</option></select>
+          </label>
+          <label>Accent or region (e.g. "Indian English, Mumbai")
+            <input id="accent" maxlength="60">
+          </label>
+          <label>Gender
+            <select id="gender"><option value="">Prefer not to say</option><option>Woman</option><option>Man</option><option>Non-binary</option><option>Self-described</option></select>
+          </label>
+        </details>
+
+        <p class="error" id="join-error" role="alert"></p>
+        <button type="submit" class="primary">Agree and continue</button>
+      </form>
+    </section>
+
+    <section id="mic" class="card" hidden>
+      <h2>2. Microphone check</h2>
+      <p>Find a normal room (it doesn't need to be quiet). Allow microphone access, then say anything: the bar should move.</p>
+      <button id="mic-start" class="primary">Allow microphone</button>
+      <div class="meter" aria-label="Microphone level"><div id="meter-bar"></div></div>
+      <p class="error" id="mic-error" role="alert"></p>
+      <button id="mic-ok" class="primary" disabled>The bar moves, continue</button>
+    </section>
+
+    <section id="record" class="card" hidden>
+      <div class="progress"><div id="progress-bar"></div></div>
+      <p class="muted" id="progress-text"></p>
+      <h2 class="phrase" id="phrase"></h2>
+      <p class="instruction" id="instruction"></p>
+      <button id="rec" class="record" aria-live="polite">Tap to record</button>
+      <p class="muted" id="rec-hint">Tap, say the phrase, then tap again. It stops by itself after 5 seconds.</p>
+      <div id="review" hidden>
+        <audio id="playback" controls></audio>
+        <div class="row">
+          <button id="redo">Record again</button>
+          <button id="next" class="primary">Sounds right, next</button>
+        </div>
+      </div>
+      <p class="error" id="rec-error" role="alert"></p>
+    </section>
+
+    <section id="done" class="card" hidden>
+      <h2>Thank you!</h2>
+      <p>All your recordings are saved.</p>
+      <p>If you ever want them deleted, keep these two codes and use the form below, or send them to the person who invited you.</p>
+      <dl class="codes">
+        <dt>Your ID</dt><dd id="done-id"></dd>
+        <dt>Withdrawal code</dt><dd id="done-code"></dd>
+      </dl>
+    </section>
+
+    <section class="card subtle">
+      <details>
+        <summary>Delete my recordings</summary>
+        <form id="withdraw-form">
+          <label>Your ID <input id="w-id" required autocomplete="off"></label>
+          <label>Withdrawal code <input id="w-code" required autocomplete="off"></label>
+          <p class="error" id="w-msg" role="alert"></p>
+          <button type="submit">Delete everything I recorded</button>
+        </form>
+      </details>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

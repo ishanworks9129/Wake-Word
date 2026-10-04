@@ -10,6 +10,7 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 | --- | --- | --- |
 | `src/WakeWord.Core` | Platform-neutral pipeline: pre-roll ring, VAD gate, detector, Deepgram session, token cache, transcript cleanup, controller | Built, tested |
 | `src/WakeWord.TokenBroker` | ASP.NET Core service that issues short-lived Deepgram tokens per user, with rate limits | Built, tested |
+| `src/WakeWord.Recorder` | Consent-first web page for collecting real recordings (26 prompts per person), with withdrawal and admin export | Built, tested; consent text is a draft |
 | `training/wakeword_train/` | Wake word training pipeline (Piper voices, open negatives, openWakeWord features, ONNX export) | Built, smoke-tested |
 | `training/colab/` | One-file Colab notebook that runs the pipeline on a free GPU | Ready to run |
 | `training/eval/`, `training/data/` | Section 3 metrics, detector mirror, dataset manifest checks | Built, tested |
@@ -24,7 +25,8 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 The .NET 10 SDK is required.
 
 ```sh
-dotnet test                                                  # 47 tests: core, ONNX runtime, broker
+dotnet test                                                  # 58 tests: core, ONNX runtime, broker, recorder
+node --test tests/recorder-js/wav.test.mjs                   # recorder page helpers
 cd training && python -m unittest discover -s tests -t .     # 20 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
 ```
 
@@ -60,6 +62,24 @@ cd training
 python -m data.manifest DATASET_MANIFEST.csv   # rejects NC/ND licenses, missing provenance, leaked test speakers
 python -m eval.metrics results.json            # pass/fail per noise band using 95% upper bounds
 ```
+
+## Collect real recordings
+
+```sh
+cd src/WakeWord.Recorder
+dotnet user-secrets init
+dotnet user-secrets set Recorder:InviteCode <code you give contributors>
+dotnet user-secrets set Recorder:AdminKey <long random secret>
+dotnet run
+```
+
+Phones only allow the microphone over **https**, so host it somewhere with a certificate (Azure App Service or
+any VM behind a reverse proxy), or for a single session expose `dotnet run` through an https tunnel such as
+Cloudflare Tunnel. Recordings go to `Recorder:StoragePath` (git-ignored). Download everything with
+`GET /api/admin/export` and the `X-Admin-Key` header; `manifest.csv` inside passes `python -m data.manifest`.
+
+**Before anyone outside the team records:** legal must approve `wwwroot/consent/v1-draft.html`. Publish the approved
+text as a new version (for example `v1.html`) and set `Recorder:ConsentVersion` to match.
 
 ## Train the wake word models
 
