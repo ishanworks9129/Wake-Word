@@ -19,3 +19,8 @@ training/models/
 
 # Collected voice recordings are personal data: never commit them.
 recordings/
+
+# Web client
+web/node_modules/
+web/dist/
+web/dist-demo/

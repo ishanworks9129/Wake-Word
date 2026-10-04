@@ -18,7 +18,7 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 | `models/` | Models the apps ship: Silero VAD now, the Colab output in `models/wakeword/` | VAD in place |
 | `src/WakeWord.Onnx` | ONNX Runtime wake word model (streaming features, both keywords), Silero VAD, model package loader, Picovoice-style `KeywordSpotter` | Built, golden-tested against Python |
 | `src/WakeWord.Maui` | MAUI app, per-platform `IAudioCaptureService`, Android foreground service | Next |
-| `web/` | TypeScript AudioWorklet capture + `onnxruntime-web` | Later |
+| `web/` | Browser client in TypeScript: mic capture with resampling, the same streaming model and Silero VAD on `onnxruntime-web` (single-threaded WASM, no COOP/COEP), Deepgram handoff, Picovoice-style `KeywordSpotter`, demo page | Built, golden-tested against Python |
 
 ## Run the tests
 
@@ -27,6 +27,7 @@ The .NET 10 SDK is required.
 ```sh
 dotnet test                                                  # 58 tests: core, ONNX runtime, broker, recorder
 node --test tests/recorder-js/wav.test.mjs                   # recorder page helpers
+cd web && npm install && npm test                            # 35 tests: browser client, same golden data
 cd training && python -m unittest discover -s tests -t .     # 20 tests; the pipeline tests need numpy, scipy, torch, onnxruntime
 ```
 
@@ -42,6 +43,26 @@ int keyword = spotter.Process(frame);   // 1280 samples of 16 kHz mono PCM; -1, 
 Sensitivity runs from 0 (fewest false accepts) to 1 (fewest misses) and is calibrated per keyword by the training run.
 For the full always-on flow (VAD gating, pre-roll, Deepgram handoff), use `WakeWordController` with
 `OnnxWakeWordModel`, `SileroVad` and `package.KeywordOptions(...)`.
+
+## Use the wake word in the browser
+
+```ts
+import { WakeWordListener, CachingTokenProvider, brokerTokenSource, configureOnnxRuntime } from "@uno/wake-word";
+
+configureOnnxRuntime();
+const listener = await WakeWordListener.create({
+  modelBaseUrl: "/models/wakeword/",
+  vadModelUrl: "/models/vad/silero_vad.onnx",
+  sensitivities: [0.5, 0.5],
+  tokens: new CachingTokenProvider(brokerTokenSource("/v1/deepgram/token", () => ({ Authorization: `Bearer ${idToken}` }))),
+});
+listener.ondetect = (d) => console.log("heard", d.keyword);
+listener.ontranscript = (t) => console.log(t.text);
+await listener.start(); // call from a click: browsers only start audio after a user gesture
+```
+
+Try it: `cd web && npm run demo`, then open http://localhost:5173 (it serves `models/` from this repo). The microphone
+needs https or localhost. Listening stops when the tab closes, and on iOS Safari when the page is backgrounded.
 
 ## Run the token broker locally
 

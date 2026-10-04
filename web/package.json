@@ -1,0 +1,25 @@
+{
+  "name": "@uno/wake-word",
+  "version": "0.1.0",
+  "private": true,
+  "description": "On-device \"Hey UNO\" / \"Hello UNO\" wake word for the browser, with Deepgram handoff.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "vite",
+    "demo:build": "vite build"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}
