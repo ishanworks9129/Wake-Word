@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vitest/config";
 
-const repo = resolve(__dirname, "..");
+const repo = resolve(import.meta.dirname, "..");
 
 /** Serves the repo's model folders to the demo: /models/... and /smoke/... (the test package). */
 function serveModels(): Plugin {

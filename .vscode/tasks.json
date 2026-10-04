@@ -1,0 +1,44 @@
+{
+  // Run with Ctrl+Shift+P -> "Tasks: Run Task", or Ctrl+Shift+B for the web demo (the default build task).
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Web: start demo",
+      "detail": "Installs packages if needed, starts the demo at http://localhost:5173 and opens the browser",
+      "type": "shell",
+      "command": "npm run demo:open",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "dependsOn": "Web: install packages",
+      "group": { "kind": "build", "isDefault": true },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^x{0}$" },
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      }
+    },
+    {
+      "label": "Web: install packages",
+      "type": "shell",
+      "command": "npm install --no-audit --no-fund --prefer-offline",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Web: run tests",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "dependsOn": "Web: install packages",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}
