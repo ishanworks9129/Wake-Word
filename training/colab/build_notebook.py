@@ -38,13 +38,13 @@ This notebook builds both wake-word models from openly licensed data, all of it 
 
 **Before you start:** *Runtime → Change runtime type → T4 GPU*. You need about **10 GB free in Google Drive**: everything is saved to `MyDrive/wakeword/<run>` (default `uno-v1`) so nothing is lost if Colab disconnects.
 
-**To run:** *Runtime → Run all*. If the session drops, reconnect and *Run all* again; finished steps are skipped and long steps resume where they stopped.
+**To run:** *Runtime → Run all*. Expect 5–7 hours in total; the free tier may stop sooner, which is fine because every step resumes. If the session drops, reconnect and *Run all* again; finished steps are skipped and long steps resume where they stopped.
 
 | Step | What it does | Time on a T4 (approx.) |
 | --- | --- | --- |
 | Setup | Downloads the feature models, the Piper voice and room recordings | 2 min |
 | Preview | Lets you listen to how the voices say each phrase | 1 min |
-| Voices | Generates 20,000 spoken examples per phrase, plus 20,000 near-misses | 30–60 min |
+| Voices | Generates 20,000 spoken examples per phrase, plus 20,000 near-misses | about 3 h (about 4 min per 2,000) |
 | Background audio | Streams about 440 hours of speech, music and noise and turns it into features | 1–3 h |
 | Features | Mixes the examples into noisy rooms and computes features | 15–30 min |
 | Train | Trains one small classifier per phrase | 10–20 min |
