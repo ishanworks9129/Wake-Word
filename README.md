@@ -13,6 +13,7 @@ The design is in the v5 plan: https://claude.ai/code/artifact/3a4d4999-713d-4338
 | `src/WakeWord.Recorder` | Consent-first web page for collecting real recordings (26 prompts per person), with withdrawal and admin export | Built, tested; consent text is a draft |
 | `training/wakeword_train/` | Wake word training pipeline (Piper voices, open negatives, openWakeWord features, ONNX export) | Built, smoke-tested |
 | `training/colab/` | One-file Colab notebook that runs the pipeline on a free GPU | Ready to run |
+| `training/studio/` + `web/studio/` | Wake Word Studio: type a phrase, train it (about 12 min), test it with your mic in the browser, download it | Built, tested end to end |
 | `training/eval/`, `training/data/` | Section 3 metrics, detector mirror, dataset manifest checks | Built, tested |
 | `testdata/` | Golden detector cases and a smoke model package with streaming golden vectors, shared by C#, Python and (later) TypeScript | In use |
 | `models/` | Models the apps ship: Silero VAD now, the Colab output in `models/wakeword/` | VAD in place |
@@ -83,6 +84,22 @@ cd training
 python -m data.manifest DATASET_MANIFEST.csv   # rejects NC/ND licenses, missing provenance, leaked test speakers
 python -m eval.metrics results.json            # pass/fail per noise band using 95% upper bounds
 ```
+
+## Wake Word Studio (train new phrases, Picovoice-style)
+
+An internal page like Picovoice's console: type a phrase, press **Train**, test it with your microphone in the
+browser, and download the package the apps load. Each phrase gets its own trained model; near-miss phrases are
+generated automatically from the CMU Pronouncing Dictionary. It runs on your machine in WSL and reuses the
+background audio from the Colab run, so only the new phrase has to be processed.
+
+One-time setup:
+1. VS Code: *Tasks: Run Task -> Studio: set up WSL environment (once)*.
+2. After the Colab run, run its step 9, download `studio_base.tar` from Drive, and unpack it in WSL:
+   `wsl -d Ubuntu -- tar -xf /mnt/c/Users/<you>/Downloads/studio_base.tar -C ~/ww`
+
+Then *Tasks: Run Task -> Studio: start* (accept the default base `~/ww/studio_base`) opens http://localhost:8765.
+Profiles: **fast** (default; measured 11.7 min per phrase on a 16-core laptop) and **thorough** (closer to the main run, about an hour). Jobs and models are kept in
+`~/ww/studio-jobs`; a restart resumes any job that was running.
 
 ## Collect real recordings
 

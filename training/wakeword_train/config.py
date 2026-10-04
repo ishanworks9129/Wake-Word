@@ -42,6 +42,8 @@ class TtsConfig:
     noise_w_scale: tuple[float, float] = (0.5, 1.2)
     holdout_every_nth_speaker: int = 10  # speaker_id % n == 0 is held out for validation
     use_cuda: bool = False
+    part_size: int = 2000  # clips per resumable part
+    workers: int = 1  # parallel synthesis processes; parts are the unit of work
 
 
 @dataclass
@@ -84,6 +86,7 @@ class TrainConfig:
     eval_points: int = 20
     average_top_k: int = 5
     seed: int = 1234
+    max_negative_hours: float = 0.0  # 0 = use all; caps RAM when the shared store is large
 
 
 @dataclass
@@ -112,6 +115,9 @@ class Config:
     train: TrainConfig = field(default_factory=TrainConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     window_samples: int = 32000  # 2.0 s of audio -> exactly 16 embeddings
+    # Folder holding assets/, negatives/ and noise/ shared by many runs (Wake Word Studio); empty = the work folder.
+    shared_dir: str = ""
+    cmudict_url: str = "https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict"
     feature_threads: int = 0  # 0 = all cores
     features_use_cuda: bool = False  # needs onnxruntime-gpu (the Colab notebook installs it)
 

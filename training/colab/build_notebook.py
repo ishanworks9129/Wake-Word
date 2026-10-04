@@ -114,6 +114,19 @@ Edit here if needed, for example the near-miss phrases or `positives_per_phrase`
              "zip_path = f'{WORK}/export/wakeword_models.zip'\n"
              "print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())\n"
              "files.download(zip_path)"),
+        code("""
+#@title 9. (Optional) Pack the base for Wake Word Studio
+# Wake Word Studio trains new phrases on your own machine, reusing this run's background audio,
+# noise and models. This writes one file to download: about 4-5 GB.
+import os, tarfile
+out = f'{WORK}/studio_base.tar'
+if not os.path.exists(out):
+    with tarfile.open(out + '.tmp', 'w') as t:
+        for rel in ['assets', 'noise/bank.npy', 'negatives']:
+            t.add(os.path.join(WORK, rel), arcname=f'studio_base/{rel}')
+    os.replace(out + '.tmp', out)
+print(f'{out}: {os.path.getsize(out) / 2**30:.1f} GB. Download it from Google Drive (wakeword/{RUN}/studio_base.tar).')
+"""),
         md("""
 ## What you get
 `wakeword_models.zip` holds `melspectrogram.onnx`, `embedding_model.onnx`, `hey_uno.onnx`, `hello_uno.onnx`, `models.json` (keywords, sensitivity tables and detector settings), `golden.json` (parity vectors for the app), `METRICS.md` and `DATASET_MANIFEST.csv`. Copy it into the repo as `models/` and share `METRICS.md` with the team.

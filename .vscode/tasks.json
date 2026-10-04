@@ -1,6 +1,14 @@
 {
   // Run with Ctrl+Shift+P -> "Tasks: Run Task", or Ctrl+Shift+B for the web demo (the default build task).
   "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "studioBase",
+      "type": "promptString",
+      "description": "Studio base folder in WSL (the unpacked studio_base from Colab; ~/ww/smoke only checks the plumbing)",
+      "default": "~/ww/studio_base"
+    }
+  ],
   "tasks": [
     {
       "label": "Web: start demo",
@@ -15,11 +23,7 @@
       "problemMatcher": {
         "owner": "vite",
         "pattern": { "regexp": "^x{0}$" },
-        "background": {
-          "activeBegins": true,
-          "beginsPattern": "VITE",
-          "endsPattern": "Local:"
-        }
+        "background": { "activeBegins": true, "beginsPattern": "VITE", "endsPattern": "Local:" }
       }
     },
     {
@@ -37,6 +41,44 @@
       "options": { "cwd": "${workspaceFolder}/web" },
       "dependsOn": "Web: install packages",
       "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Studio: start",
+      "detail": "Builds the Studio page, starts the Studio server in WSL and opens http://localhost:8765",
+      "type": "shell",
+      "command": "Start-Process http://localhost:8765",
+      "dependsOn": "Studio: server",
+      "presentation": { "reveal": "never" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Studio: server",
+      "type": "shell",
+      "command": "wsl -d Ubuntu --cd \"${workspaceFolder}\" -- bash training/studio/start_wsl.sh ${input:studioBase}",
+      "dependsOn": "Studio: build page",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": {
+        "owner": "studio",
+        "pattern": { "regexp": "^x{0}$" },
+        "background": { "activeBegins": true, "beginsPattern": "Base ", "endsPattern": "Base " }
+      }
+    },
+    {
+      "label": "Studio: build page",
+      "type": "shell",
+      "command": "npm run studio:build",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "dependsOn": "Web: install packages",
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Studio: set up WSL environment (once)",
+      "type": "shell",
+      "command": "wsl -d Ubuntu --cd \"${workspaceFolder}\" -- bash training/studio/setup_wsl.sh",
       "presentation": { "reveal": "always", "panel": "shared", "clear": true },
       "problemMatcher": []
     }

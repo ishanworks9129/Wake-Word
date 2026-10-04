@@ -3,8 +3,14 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -14,5 +20,12 @@
     "sourceMap": true,
     "outDir": "dist"
   },
-  "include": ["src", "test", "demo", "vite.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "demo",
+    "studio",
+    "vite.config.ts",
+    "vite.studio.config.ts"
+  ]
 }

@@ -12,7 +12,9 @@
     "test": "vitest run",
     "demo": "vite",
     "demo:open": "vite --open",
-    "demo:build": "vite build"
+    "demo:build": "vite build",
+    "studio:dev": "vite --config vite.studio.config.ts",
+    "studio:build": "vite build --config vite.studio.config.ts"
   },
   "dependencies": {
     "onnxruntime-web": "1.30.0"

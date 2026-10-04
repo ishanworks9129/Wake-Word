@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import os
 import time
 import wave
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +30,7 @@ from .store import EmbeddingStore, FRAMES_PER_HOUR
 from .tts import ClipSet, PiperSynth, generate, is_held_out
 
 STEPS = ["setup", "preview", "tts", "negatives", "features", "train", "evaluate", "export"]
-TTS_PART = 2000  # clips per resumable part
+SHARED_DIRS = ("assets", "noise", "negatives")
 EVAL_WINDOW = 4 * SAMPLE_RATE  # validation positives: clip ends 1 s before the end of a 4 s window
 EVAL_TRAILING = SAMPLE_RATE
 
@@ -36,13 +39,17 @@ class Run:
     def __init__(self, cfg: Config, work: Path):
         self.cfg = cfg
         self.work = work
-        for d in ("assets", "steps", "clips", "noise", "features", "models", "eval", "export", "preview"):
+        # Background audio, noise and downloaded models can be shared by many runs (Wake Word Studio).
+        self.shared = Path(cfg.shared_dir) if cfg.shared_dir else work
+        for d in ("steps", "clips", "features", "models", "eval", "export", "preview"):
             (work / d).mkdir(parents=True, exist_ok=True)
+        for d in SHARED_DIRS:
+            (self.shared / d).mkdir(parents=True, exist_ok=True)
 
     # ---- paths and shared resources
 
     def asset(self, name: str) -> Path:
-        return self.work / "assets" / name
+        return self.shared / "assets" / name
 
     def voice_paths(self) -> list[tuple[Path, Path]]:
         return [(self.asset(f"voices/{v.name}.onnx"), self.asset(f"voices/{v.name}.onnx.json")) for v in self.cfg.tts.voices]
@@ -55,10 +62,10 @@ class Run:
         return [PiperSynth(m, c, self.cfg.tts.use_cuda) for m, c in self.voice_paths()]
 
     def store(self, split: str) -> EmbeddingStore:
-        return EmbeddingStore(self.work / "negatives" / split)
+        return EmbeddingStore(self.shared / "negatives" / split)
 
     def augmenter(self, seed: int, cfg: AugmentConfig | None = None, window: int | None = None) -> Augmenter:
-        noise = NoiseBank.load(self.work / "noise" / "bank.npy")
+        noise = NoiseBank.load(self.shared / "noise" / "bank.npy")
         rirs = load_rirs(self.asset("rir.zip"))
         return Augmenter(cfg or self.cfg.augment, noise, rirs, window or self.cfg.window_samples, seed)
 
@@ -87,6 +94,7 @@ class Run:
         download(cfg.melspectrogram_url, self.asset("melspectrogram.onnx"))
         download(cfg.embedding_url, self.asset("embedding_model.onnx"))
         download(cfg.rir_url, self.asset("rir.zip"))
+        download(cfg.cmudict_url, self.asset("cmudict.dict"))
         for v, (model, config) in zip(cfg.tts.voices, self.voice_paths()):
             download(v.model_url, model)
             download(v.config_url, config)
@@ -112,45 +120,61 @@ class Run:
         return {"files": files}
 
     def tts(self) -> dict:
+        """Synthesises every missing part, in parallel when tts.workers > 1, then merges parts per phrase and kind."""
         cfg = self.cfg
-        synths = None
-        summary = {}
+        size = cfg.tts.part_size
+        jobs, groups = [], []
         for p in cfg.phrases:
             for kind, texts, n in (("pos", p.tts_texts, cfg.tts.positives_per_phrase),
                                    ("adv", p.adversarial_texts, cfg.tts.adversarial_per_phrase)):
                 final = self.work / "clips" / f"{p.id}_{kind}.npz"
-                if final.exists():
-                    summary[f"{p.id}_{kind}"] = len(ClipSet.load(final))
-                    continue
                 parts_dir = self.work / "clips" / f"{p.id}_{kind}_parts"
+                groups.append((p.id, kind, texts, final, parts_dir))
+                if final.exists():
+                    continue
                 parts_dir.mkdir(exist_ok=True)
-                n_parts = -(-n // TTS_PART)
+                n_parts = -(-n // size)
                 for part in range(n_parts):
                     part_path = parts_dir / f"part_{part:03d}.npz"
-                    if part_path.exists():
-                        continue
-                    synths = synths or self.synths()
-                    count = min(TTS_PART, n - part * TTS_PART)
-                    rng = np.random.default_rng([cfg.train.seed, hash_id(p.id), 0 if kind == "pos" else 1, part])
-                    started = time.time()
-                    clips = generate(synths, texts, count, cfg.tts, rng)
-                    clips.save(part_path)
-                    print(f"{p.id} {kind}: part {part + 1}/{n_parts} ({len(clips)} clips, {time.time() - started:.0f}s)")
+                    if not part_path.exists():
+                        seed = [cfg.train.seed, hash_id(p.id), 0 if kind == "pos" else 1, part]
+                        label = f"{p.id} {kind}: part {part + 1}/{n_parts}"
+                        jobs.append((texts, min(size, n - part * size), cfg.tts, seed, str(part_path), label))
+
+        voices = [(str(m), str(c)) for m, c in self.voice_paths()]
+        started = time.time()
+        if cfg.tts.workers > 1 and len(jobs) > 1:
+            ctx = multiprocessing.get_context("spawn")  # ONNX Runtime sessions must not be forked
+            workers = min(cfg.tts.workers, len(jobs))
+            threads = max(1, (os.cpu_count() or workers) // workers)
+            with ProcessPoolExecutor(workers, mp_context=ctx,
+                                     initializer=_init_tts_worker, initargs=(voices, cfg.tts.use_cuda, threads)) as pool:
+                for future in as_completed([pool.submit(_tts_part, job) for job in jobs]):
+                    label, count, seconds = future.result()
+                    print(f"{label} ({count} clips, {seconds:.0f}s; {time.time() - started:.0f}s elapsed)", flush=True)
+        elif jobs:
+            _init_tts_worker(voices, cfg.tts.use_cuda)
+            for job in jobs:
+                label, count, seconds = _tts_part(job)
+                print(f"{label} ({count} clips, {seconds:.0f}s)", flush=True)
+
+        summary = {}
+        for phrase_id, kind, texts, final, parts_dir in groups:
+            if not final.exists():
                 parts = [ClipSet.load(f) for f in sorted(parts_dir.glob("part_*.npz"))]
-                merged = ClipSet.from_clips(
+                ClipSet.from_clips(
                     [c.clip(i) for c in parts for i in range(len(c))],
                     np.concatenate([c.speakers for c in parts]),
                     np.concatenate([c.texts for c in parts]),
                     texts,
-                )
-                merged.save(final)
-                summary[f"{p.id}_{kind}"] = len(merged)
+                ).save(final)
+            summary[f"{phrase_id}_{kind}"] = len(ClipSet.load(final))
         return summary
 
     def negatives(self) -> dict:
         cfg = self.cfg
         fx = self.features()
-        noise_dir = self.work / "noise" / "parts"
+        noise_dir = self.shared / "noise" / "parts"
         noise_dir.mkdir(parents=True, exist_ok=True)
         noise_samples = sum(np.load(f, mmap_mode="r").shape[0] for f in noise_dir.glob("*.npy"))
         noise_target = int(cfg.augment.noise_bank_hours * 3600 * SAMPLE_RATE)
@@ -191,7 +215,7 @@ class Run:
         parts = [np.load(f) for f in sorted(noise_dir.glob("*.npy"))]
         rng = np.random.default_rng(cfg.train.seed)
         bank = np.concatenate(parts + [colored_noise(120, rng)])
-        NoiseBank(bank).save(self.work / "noise" / "bank.npy")
+        NoiseBank(bank).save(self.shared / "noise" / "bank.npy")
         hours = self.hours()
         for split in ("train", "val"):
             if self.store(split).hours() == 0:
@@ -233,7 +257,8 @@ class Run:
         from .trainer import train
 
         cfg = self.cfg
-        neg = self.store("train").load()
+        cap = int(cfg.train.max_negative_hours * FRAMES_PER_HOUR) or None
+        neg = self.store("train").load(cap)
         val_neg = self.store("val").load()
         summary = {}
         for p in cfg.phrases:
@@ -330,6 +355,36 @@ class Run:
         )
         print(f"model package: {zip_path}")
         return {"zip": str(zip_path), "onnx_parity_max_diff": parity}
+
+
+_TTS_SYNTHS: list[PiperSynth] | None = None
+
+
+def _init_tts_worker(voices: list[tuple[str, str]], use_cuda: bool, threads: int = 0) -> None:
+    global _TTS_SYNTHS
+    if threads:
+        # Piper builds its own SessionOptions with every core; with several workers that oversubscribes the CPU
+        # badly (8 workers x 16 threads), so each worker gets its share of the cores instead.
+        import onnxruntime
+
+        base = onnxruntime.SessionOptions
+
+        def limited() -> onnxruntime.SessionOptions:
+            options = base()
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+            return options
+
+        onnxruntime.SessionOptions = limited  # type: ignore[assignment]
+    _TTS_SYNTHS = [PiperSynth(Path(m), Path(c), use_cuda) for m, c in voices]
+
+
+def _tts_part(job: tuple) -> tuple[str, int, float]:
+    texts, count, tts_cfg, seed, part_path, label = job
+    started = time.time()
+    clips = generate(_TTS_SYNTHS, texts, count, tts_cfg, np.random.default_rng(seed))
+    clips.save(Path(part_path))
+    return label, len(clips), time.time() - started
 
 
 def hash_id(s: str) -> int:

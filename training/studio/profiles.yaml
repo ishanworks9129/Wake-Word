@@ -1,0 +1,35 @@
+# Overrides applied on top of the template config for each Studio job. Dotted keys, as in --set.
+fast:  # measured: 11.7 min per phrase on a 16-core laptop in WSL
+  tts.positives_per_phrase: 6000
+  tts.adversarial_per_phrase: 6000
+  tts.part_size: 500
+  tts.use_cuda: false
+  augment.copies_per_clip: 1
+  train.steps: 15000
+  train.max_negative_hours: 150
+  features_use_cuda: false
+
+thorough:  # closer to the main "Hey UNO" run; about an hour
+  tts.positives_per_phrase: 20000
+  tts.adversarial_per_phrase: 20000
+  tts.part_size: 1000
+  tts.use_cuda: false
+  augment.copies_per_clip: 2
+  train.steps: 40000
+  train.max_negative_hours: 300
+  features_use_cuda: false
+
+tiny:  # for checking the plumbing (a minute or two); the model is useless
+  tts.positives_per_phrase: 120
+  tts.adversarial_per_phrase: 60
+  tts.part_size: 40
+  tts.holdout_every_nth_speaker: 5
+  tts.use_cuda: false
+  augment.copies_per_clip: 1
+  train.steps: 600
+  train.batch_positive: 64
+  train.batch_adversarial: 32
+  train.batch_negative: 128
+  train.eval_points: 4
+  train.average_top_k: 2
+  features_use_cuda: false

@@ -1,0 +1,14 @@
+# Training pipeline and Wake Word Studio (Python 3.12). PyTorch CPU wheels are enough for the Studio.
+numpy
+scipy
+soundfile
+requests
+pyyaml
+onnx
+onnxscript
+onnxruntime
+piper-tts==1.8.0
+torch
+fastapi
+uvicorn[standard]
+httpx

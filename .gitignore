@@ -24,3 +24,5 @@ recordings/
 web/node_modules/
 web/dist/
 web/dist-demo/
+
+web/dist-studio/
