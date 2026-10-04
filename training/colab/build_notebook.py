@@ -84,6 +84,7 @@ print('onnxruntime', onnxruntime.__version__, onnxruntime.get_available_provider
         "    path = os.path.join('/content/training', rel)\n"
         "    os.makedirs(os.path.dirname(path), exist_ok=True)\n"
         "    open(path, 'w').write(text)\n"
+        "os.makedirs('/content/training/configs', exist_ok=True)  # the %%writefile cell below cannot create folders\n"
         "print(f'wrote {len(FILES)} files')",
         hidden=True,
     ))
