@@ -1,0 +1,68 @@
+# Tiny end-to-end run (~10 min on a laptop CPU) to check the pipeline works. The model it makes is useless.
+run_name: smoke
+
+phrases:
+  - id: hey_uno
+    display: Hey UNO
+    tts_texts: ["hey uno", "hey oono"]
+    adversarial_texts: [hey you know, hey you, uno]
+    transcript_variants: [hey you know]
+  - id: hello_uno
+    display: Hello UNO
+    tts_texts: ["hello uno", "hello oono"]
+    adversarial_texts: [hello, hello you know, uno]
+    transcript_variants: [hello you know]
+
+tts:
+  voices:
+    - name: en_US-libritts_r-medium
+      model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
+      config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
+      license: CC-BY-4.0
+      license_url: https://creativecommons.org/licenses/by/4.0/
+  positives_per_phrase: 150
+  adversarial_per_phrase: 60
+  holdout_every_nth_speaker: 5
+  use_cuda: false
+
+negatives:
+  - name: librispeech_train
+    kind: tar
+    split: train
+    max_hours: 0.25
+    urls: [https://www.openslr.org/resources/12/dev-clean.tar.gz]
+    noise_bank: [dev-clean]
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://www.openslr.org/12/
+  - name: librispeech_val
+    kind: tar
+    split: val
+    max_hours: 0.1
+    urls: [https://www.openslr.org/resources/12/dev-other.tar.gz]
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://www.openslr.org/12/
+
+rir_url: https://mcdermottlab.mit.edu/Reverb/IRMAudio/Audio.zip
+rir:
+  license: CC-BY-4.0
+  license_url: https://creativecommons.org/licenses/by/4.0/
+
+melspectrogram_url: https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/melspectrogram.onnx
+embedding_url: https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.onnx
+feature_models:
+  license: Apache-2.0
+  license_url: https://github.com/dscripka/openWakeWord/blob/main/LICENSE
+
+augment:
+  copies_per_clip: 1
+  noise_bank_hours: 0.05
+
+train:
+  steps: 3000
+  batch_positive: 64
+  batch_adversarial: 32
+  batch_negative: 128
+  eval_points: 6
+  average_top_k: 2

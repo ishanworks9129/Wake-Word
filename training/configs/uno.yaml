@@ -1,0 +1,120 @@
+# v0 models for "Hey UNO" and "Hello UNO". Every source here allows commercial use.
+# Positives are synthetic only; retrain with real recordings (plan 5.2) before release.
+run_name: uno-v0
+
+phrases:
+  - id: hey_uno
+    display: Hey UNO
+    # Spellings that make Piper say "oo-no". Check the preview step and edit if it says "you-no" or spells letters.
+    tts_texts: ["hey uno", "hey, uno", "hey oono", "hey uno!", "hey ooh-no"]
+    adversarial_texts:
+      - hey you know
+      - you know
+      - hey, you know what
+      - you know what I mean
+      - hey you
+      - hey you now
+      - hey you go
+      - hey juno
+      - hey bruno
+      - hey no
+      - hey new
+      - hey yo
+      - hey there
+      - okay you know
+      - uno
+      - let's play uno
+      - hey, one
+      - hey, number one
+    transcript_variants: [hey you know, hey you no, hey juno, hey oono, hey u no, hey uno]
+  - id: hello_uno
+    display: Hello UNO
+    tts_texts: ["hello uno", "hello, uno", "hello oono", "hello uno!", "hello ooh-no"]
+    adversarial_texts:
+      - hello
+      - hello you know
+      - hello, you know what
+      - hello you
+      - hello juno
+      - hello bruno
+      - hello no
+      - hello new
+      - hello there
+      - yellow uno
+      - below you know
+      - hollow uno
+      - uno
+      - let's play uno
+      - hello, one
+      - oh hello you
+    transcript_variants: [hello you know, hello you no, hello juno, hello oono, hello u no, hello uno]
+
+tts:
+  voices:
+    - name: en_US-libritts_r-medium  # 904 speakers
+      model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
+      config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
+      license: CC-BY-4.0  # MODEL_CARD: trained on LibriTTS-R (openslr.org/141)
+      license_url: https://creativecommons.org/licenses/by/4.0/
+  positives_per_phrase: 20000
+  adversarial_per_phrase: 20000
+  use_cuda: true
+
+negatives:
+  - name: librispeech_train
+    kind: tar
+    split: train
+    max_hours: 300
+    urls:
+      - https://www.openslr.org/resources/12/train-clean-100.tar.gz
+      - https://www.openslr.org/resources/12/train-other-500.tar.gz
+      - https://www.openslr.org/resources/12/train-clean-360.tar.gz
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://www.openslr.org/12/
+  - name: musan
+    kind: tar
+    split: train
+    max_hours: 110
+    urls: [https://www.openslr.org/resources/17/musan.tar.gz]
+    include: [musan/music/, musan/noise/, musan/speech/]
+    noise_bank: [musan/noise/, musan/music/]
+    # OpenSLR lists CC BY 4.0; the corpus excludes NonCommercial files. Per-file attribution lives in MUSAN's LICENSE files.
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://www.openslr.org/17/
+  - name: librispeech_val
+    kind: tar
+    split: val
+    max_hours: 30
+    urls:
+      - https://www.openslr.org/resources/12/dev-clean.tar.gz
+      - https://www.openslr.org/resources/12/dev-other.tar.gz
+      - https://www.openslr.org/resources/12/test-clean.tar.gz
+      - https://www.openslr.org/resources/12/test-other.tar.gz
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://www.openslr.org/12/
+
+rir_url: https://mcdermottlab.mit.edu/Reverb/IRMAudio/Audio.zip
+rir:
+  license: CC-BY-4.0
+  license_url: https://creativecommons.org/licenses/by/4.0/
+
+melspectrogram_url: https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/melspectrogram.onnx
+embedding_url: https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.onnx
+features_use_cuda: true
+feature_models:
+  license: Apache-2.0  # openWakeWord; embedding derived from Google's Apache-2.0 speech_embedding
+  license_url: https://github.com/dscripka/openWakeWord/blob/main/LICENSE
+
+augment:
+  copies_per_clip: 2
+  noise_bank_hours: 6
+
+train:
+  steps: 40000
+
+eval:
+  consecutive_frames: 3
+  refractory_seconds: 1.5
