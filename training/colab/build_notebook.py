@@ -36,7 +36,7 @@ def build() -> dict:
 
 This notebook builds both wake-word models from openly licensed data, all of it allowed for commercial use, and packages them for the app.
 
-**Before you start:** *Runtime → Change runtime type → T4 GPU*. You need about **10 GB free in Google Drive**: everything is saved to `MyDrive/wakeword/<run>` so nothing is lost if Colab disconnects.
+**Before you start:** *Runtime → Change runtime type → T4 GPU*. You need about **10 GB free in Google Drive**: everything is saved to `MyDrive/wakeword/<run>` (default `uno-v1`) so nothing is lost if Colab disconnects.
 
 **To run:** *Runtime → Run all*. If the session drops, reconnect and *Run all* again; finished steps are skipped and long steps resume where they stopped.
 
@@ -56,7 +56,7 @@ This notebook builds both wake-word models from openly licensed data, all of it 
 from google.colab import drive
 drive.mount('/content/drive')
 import os, subprocess
-RUN = 'uno-v0'  #@param {type:"string"}
+RUN = 'uno-v1'  #@param {type:"string"}
 WORK = f'/content/drive/MyDrive/wakeword/{RUN}'
 os.makedirs(WORK, exist_ok=True)
 os.environ['WORK'] = WORK

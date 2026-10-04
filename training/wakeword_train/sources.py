@@ -48,14 +48,20 @@ def download(url: str, dest: Path, retries: int = 5) -> Path:
 
 
 def to_16k_mono_int16(audio: np.ndarray, sr: int) -> np.ndarray:
+    """int16 input keeps its scale; float input is taken as [-1, 1] full scale.
+
+    The scale is decided by the input dtype, never by the values: resampling a clip normalised to a peak
+    of exactly 1.0 can overshoot slightly, and a value-based check then skipped scaling and produced
+    near-silent clips.
+    """
     x = audio.astype(np.float32)
+    if np.issubdtype(audio.dtype, np.floating):
+        x = x * 32767.0
     if x.ndim == 2:
         x = x.mean(axis=1)
     if sr != SAMPLE_RATE:
         g = np.gcd(sr, SAMPLE_RATE)
         x = resample_poly(x, SAMPLE_RATE // g, sr // g)
-    if audio.dtype != np.int16:
-        x = x * 32767.0 if np.abs(x).max(initial=0) <= 1.0 else x
     return np.clip(np.round(x), -32768, 32767).astype(np.int16)
 
 

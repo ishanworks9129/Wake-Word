@@ -69,6 +69,24 @@ class AugmenterTests(unittest.TestCase):
         self.assertAlmostEqual(snr, 10.0, delta=0.5)
 
 
+class ConversionTests(unittest.TestCase):
+    def test_float_audio_normalised_to_full_scale_survives_resampling(self):
+        from wakeword_train.sources import to_16k_mono_int16
+
+        rng = np.random.default_rng(0)
+        for _ in range(50):  # Piper-style: 22.05 kHz, peak exactly 1.0; resampling may overshoot
+            x = rng.normal(size=22050).astype(np.float32)
+            x /= np.abs(x).max()
+            out = to_16k_mono_int16(x, 22050)
+            self.assertGreater(np.abs(out.astype(int)).max(), 20000)
+
+    def test_int16_audio_keeps_its_scale(self):
+        from wakeword_train.sources import to_16k_mono_int16
+
+        x = (np.sin(np.arange(16000) / 3) * 1000).astype(np.int16)
+        self.assertTrue(np.array_equal(to_16k_mono_int16(x, 16000), x))
+
+
 class StoreTests(unittest.TestCase):
     def test_resume_progress_and_windows(self):
         with tempfile.TemporaryDirectory() as d:

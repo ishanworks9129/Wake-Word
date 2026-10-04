@@ -11,6 +11,8 @@ from . import SAMPLE_RATE
 from .config import TtsConfig
 from .sources import to_16k_mono_int16
 
+MIN_PEAK = 1000  # int16; Piper normalises to full scale, so anything quieter is broken output
+
 
 @dataclass
 class ClipSet:
@@ -118,8 +120,8 @@ def generate(
             float(rng.uniform(*cfg.noise_scale)),
             float(rng.uniform(*cfg.noise_w_scale)),
         )
-        if len(audio) < SAMPLE_RATE // 10:
-            continue
+        if len(audio) < SAMPLE_RATE // 10 or np.abs(audio.astype(np.int32)).max() < MIN_PEAK:
+            continue  # empty or near-silent output is never a useful example
         clips.append(audio)
         speakers.append(v * 100000 + speaker)
         text_idx.append(t)
