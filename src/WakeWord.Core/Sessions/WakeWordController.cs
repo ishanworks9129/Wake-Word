@@ -23,6 +23,7 @@ public enum SessionRejection
 
 public sealed record SessionTelemetry(
     SessionTrigger Trigger,
+    string? Keyword,
     double? DetectionScore,
     SessionEndReason Reason,
     TimeSpan AudioSent,
@@ -70,11 +71,20 @@ public sealed class WakeWordController : IAsyncDisposable
         _time = time ?? TimeProvider.System;
         _ring = new PcmRingBuffer(WakeWordOptions.SampleRate, options.RingCapacity);
         _limiter = new SessionRateLimiter(options.MaxSessionsPerHour, TimeSpan.FromHours(1), _time);
-        _stripper = new WakePhraseStripper(options.WakePhrase, options.WakePhraseVariants);
+        if (!options.Keywords.Select(k => k.Id).SequenceEqual(model.Keywords))
+        {
+            throw new ArgumentException(
+                $"Options keywords [{string.Join(", ", options.Keywords.Select(k => k.Id))}] must match the model's [{string.Join(", ", model.Keywords)}], in order.",
+                nameof(options));
+        }
 
-        Engine = new WakeWordEngine(model, vad, _ring, options.Detector, options.Vad);
+        var phrases = options.Keywords.SelectMany(k => k.TranscriptVariants.Prepend(k.Phrase)).ToArray();
+        _stripper = new WakePhraseStripper(phrases[0], phrases[1..]);
+
+        Engine = new WakeWordEngine(model, vad, _ring, options.Keywords.Select(k => k.Detector).ToList(), options.Vad);
         Engine.SpeechStarted += (_, _) => _tokens.Prefetch();
-        Engine.Detected += (_, detection) => TryStart(SessionTrigger.WakeWord, detection.FrameEndSample - _ring.SamplesFor(_options.PreRoll), detection.Score);
+        Engine.Detected += (_, detection) => TryStart(
+            SessionTrigger.WakeWord, detection.FrameEndSample - _ring.SamplesFor(_options.PreRoll), detection);
     }
 
     public WakeWordEngine Engine { get; }
@@ -93,7 +103,7 @@ public sealed class WakeWordController : IAsyncDisposable
     public event EventHandler<SessionRejection>? SessionRejected;
 
     /// <summary>Tap-to-talk: streams from now, with no pre-roll.</summary>
-    public bool StartManualSession() => TryStart(SessionTrigger.Manual, _ring.TotalWritten, null);
+    public bool StartManualSession() => TryStart(SessionTrigger.Manual, _ring.TotalWritten, detection: null);
 
     /// <summary>Ends the current session early, e.g. when the user taps stop.</summary>
     public void StopSession()
@@ -121,7 +131,7 @@ public sealed class WakeWordController : IAsyncDisposable
         _disposed.Dispose();
     }
 
-    private bool TryStart(SessionTrigger trigger, long streamFromSample, double? score)
+    private bool TryStart(SessionTrigger trigger, long streamFromSample, WakeWordDetection? detection)
     {
         lock (_gate)
         {
@@ -145,12 +155,12 @@ public sealed class WakeWordController : IAsyncDisposable
             _currentCts?.Dispose();
             _currentCts = CancellationTokenSource.CreateLinkedTokenSource(_disposed.Token);
             var token = _currentCts.Token;
-            _current = Task.Run(() => RunAsync(trigger, streamFromSample, score, token), CancellationToken.None);
+            _current = Task.Run(() => RunAsync(trigger, streamFromSample, detection, token), CancellationToken.None);
             return true;
         }
     }
 
-    private async Task RunAsync(SessionTrigger trigger, long streamFromSample, double? score, CancellationToken cancellationToken)
+    private async Task RunAsync(SessionTrigger trigger, long streamFromSample, WakeWordDetection? detection, CancellationToken cancellationToken)
     {
         var session = new DeepgramSession(_ring, _tokens, _transportFactory, _options.Deepgram, _options.Session, _stripper, _time);
         session.TranscriptUpdated += (_, update) => TranscriptUpdated?.Invoke(this, update);
@@ -158,7 +168,8 @@ public sealed class WakeWordController : IAsyncDisposable
 
         var result = await session.RunAsync(streamFromSample, cancellationToken).ConfigureAwait(false);
 
-        _telemetry?.SessionCompleted(new SessionTelemetry(trigger, score, result.Reason, result.AudioSent, result.ConnectLatency));
+        _telemetry?.SessionCompleted(new SessionTelemetry(
+            trigger, detection?.Keyword, detection?.Score, result.Reason, result.AudioSent, result.ConnectLatency));
         SessionEnded?.Invoke(this, result);
     }
 }

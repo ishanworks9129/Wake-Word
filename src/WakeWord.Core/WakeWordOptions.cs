@@ -3,24 +3,33 @@ using WakeWord.Core.Detection;
 
 namespace WakeWord.Core;
 
+/// <summary>One wake phrase and how it fires. Usually built from a model package (WakeWord.Onnx.ModelPackage).</summary>
+public sealed record KeywordOptions
+{
+    public required string Id { get; init; }
+
+    /// <summary>What users say, e.g. "Hey UNO". Stripped from transcripts.</summary>
+    public required string Phrase { get; init; }
+
+    public WakeWordDetectorOptions Detector { get; init; } = new();
+
+    /// <summary>Known Deepgram mis-hearings of the phrase, stripped like the phrase itself.</summary>
+    public IReadOnlyList<string> TranscriptVariants { get; init; } = [];
+}
+
 /// <summary>Everything tunable in the pipeline, bindable from configuration or a downloaded model manifest.</summary>
 public sealed record WakeWordOptions
 {
     public const int SampleRate = 16_000;
 
-    /// <summary>Must match the phrase the model was trained on (plan 2).</summary>
-    public string WakePhrase { get; init; } = "Hey UNO";
-
-    /// <summary>Known mis-hearings, stripped from transcripts like the phrase itself.</summary>
-    public IReadOnlyList<string> WakePhraseVariants { get; init; } = [];
+    /// <summary>One entry per keyword, in the model's keyword order.</summary>
+    public required IReadOnlyList<KeywordOptions> Keywords { get; init; }
 
     public TimeSpan PreRoll { get; init; } = TimeSpan.FromSeconds(2);
 
     public TimeSpan RingCapacity { get; init; } = TimeSpan.FromSeconds(10);
 
     public int MaxSessionsPerHour { get; init; } = 60;
-
-    public WakeWordDetectorOptions Detector { get; init; } = new();
 
     public VadGateOptions Vad { get; init; } = new();
 

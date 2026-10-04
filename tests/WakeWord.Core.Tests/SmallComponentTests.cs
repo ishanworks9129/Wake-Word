@@ -23,6 +23,19 @@ public class WakePhraseStripperTests
         Assert.Equal(expected, _stripper.Strip(transcript));
 }
 
+public class SensitivityTableTests
+{
+    [Fact]
+    public void Interpolates_like_the_training_pipeline()
+    {
+        var table = new SensitivityTable([(0.0, 0.9), (0.5, 0.6), (1.0, 0.2)]);
+        Assert.Equal(0.9, table.ThresholdFor(-1));
+        Assert.Equal(0.75, table.ThresholdFor(0.25), 6);
+        Assert.Equal(0.6, table.ThresholdFor(0.5), 6);
+        Assert.Equal(0.2, table.ThresholdFor(2));
+    }
+}
+
 public class VadGateTests
 {
     [Fact]

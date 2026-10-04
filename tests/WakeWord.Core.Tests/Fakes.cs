@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using WakeWord.Core;
 using WakeWord.Core.Deepgram;
 using WakeWord.Core.Detection;
 
@@ -100,6 +101,14 @@ internal sealed class FakeTransport : IDeepgramTransport
     public const string UtteranceEnd = """{"type":"UtteranceEnd","last_word_end":2.1}""";
 }
 
+internal static class TestOptions
+{
+    public static WakeWordOptions For(params string[] keywords) => new()
+    {
+        Keywords = keywords.Select(k => new KeywordOptions { Id = k, Phrase = "Hey UNO" }).ToList(),
+    };
+}
+
 internal sealed class StaticTokenProvider(Exception? error = null) : ITokenProvider
 {
     public int Prefetches;
@@ -112,10 +121,12 @@ internal sealed class StaticTokenProvider(Exception? error = null) : ITokenProvi
     public void Prefetch() => Interlocked.Increment(ref Prefetches);
 }
 
-/// <summary>Model whose score for frame i is scores[i] (last value repeats).</summary>
+/// <summary>Single-keyword model whose score for frame i is scores[i] (last value repeats).</summary>
 internal sealed class ScriptedModel(params double[] scores) : IWakeWordModel
 {
     public int FrameSamples => 1280;
+
+    public IReadOnlyList<string> Keywords { get; init; } = ["hey_uno"];
 
     public int Appended { get; private set; }
 
@@ -123,10 +134,11 @@ internal sealed class ScriptedModel(params double[] scores) : IWakeWordModel
 
     public void AppendFrame(ReadOnlySpan<short> frame) => Appended++;
 
-    public double Score()
+    public bool Score(Span<double> output)
     {
         Scored++;
-        return scores[Math.Min(Appended - 1, scores.Length - 1)];
+        output.Fill(scores[Math.Min(Appended - 1, scores.Length - 1)]);
+        return true;
     }
 
     public void Dispose()

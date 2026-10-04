@@ -23,7 +23,7 @@ public class WakeWordEngineTests
         var model = new ScriptedModel(0.1);
         // Frames 0-4 silent, 5-9 speech, then silence; 1 s hangover = 12.5 frames.
         var vad = new ScriptedVad([0, 0, 0, 0, 0, 0.9, 0.9, 0.9, 0.9, 0.9, 0]);
-        var engine = new WakeWordEngine(model, vad, ring, new WakeWordDetectorOptions(), new VadGateOptions());
+        var engine = new WakeWordEngine(model, vad, ring, [new WakeWordDetectorOptions()], new VadGateOptions());
         var speechStarts = 0;
         engine.SpeechStarted += (_, _) => speechStarts++;
 
@@ -40,7 +40,7 @@ public class WakeWordEngineTests
     public void Fires_with_the_frame_end_position_and_respects_pause()
     {
         var ring = new PcmRingBuffer(16000, TimeSpan.FromSeconds(10));
-        var engine = new WakeWordEngine(new ScriptedModel(0.9), new ScriptedVad(1.0), ring, new WakeWordDetectorOptions(), new VadGateOptions());
+        var engine = new WakeWordEngine(new ScriptedModel(0.9), new ScriptedVad(1.0), ring, [new WakeWordDetectorOptions()], new VadGateOptions());
         var fires = new List<WakeWordDetection>();
         engine.Detected += (_, d) => fires.Add(d);
 
@@ -51,6 +51,23 @@ public class WakeWordEngineTests
         engine.Paused = false;
         Feed(engine, 1280 * 3);
         Assert.Equal(1280 * 8, Assert.Single(fires).FrameEndSample);
+    }
+
+    [Fact]
+    public void Each_keyword_has_its_own_detector_and_reports_its_name()
+    {
+        var ring = new PcmRingBuffer(16000, TimeSpan.FromSeconds(10));
+        var model = new ScriptedModel(0.7) { Keywords = ["hey_uno", "hello_uno"] };
+        var strict = new WakeWordDetectorOptions { BaseThreshold = 0.9 };
+        var engine = new WakeWordEngine(model, new ScriptedVad(1.0), ring, [strict, new WakeWordDetectorOptions()], new VadGateOptions());
+        var fires = new List<WakeWordDetection>();
+        engine.Detected += (_, d) => fires.Add(d);
+
+        Feed(engine, 1280 * 3);
+
+        var fire = Assert.Single(fires); // 0.7 clears hello_uno's 0.5 but not hey_uno's 0.9
+        Assert.Equal(("hello_uno", 1), (fire.Keyword, fire.KeywordIndex));
+        Assert.Throws<ArgumentException>(() => new WakeWordEngine(model, new ScriptedVad(1.0), ring, [strict], new VadGateOptions()));
     }
 }
 
@@ -75,7 +92,7 @@ public class WakeWordControllerTests
         var transports = new List<FakeTransport>();
         var tokens = new StaticTokenProvider();
         var telemetry = new Telemetry();
-        var options = new WakeWordOptions { Session = new DeepgramSessionLimits { NoTranscriptCutoff = TimeSpan.FromMinutes(1), HardTimeout = TimeSpan.FromMinutes(1) } };
+        var options = TestOptions.For("hey_uno") with { Session = new DeepgramSessionLimits { NoTranscriptCutoff = TimeSpan.FromMinutes(1), HardTimeout = TimeSpan.FromMinutes(1) } };
         await using var controller = new WakeWordController(
             options, new ScriptedModel(0.9), new ScriptedVad(1.0), tokens,
             () => { var t = new FakeTransport(); lock (transports) transports.Add(t); return t; },
@@ -106,7 +123,18 @@ public class WakeWordControllerTests
         Assert.Equal(SessionEndReason.Cancelled, result.Reason);
         var record = Assert.Single(telemetry.Records);
         Assert.Equal(SessionTrigger.WakeWord, record.Trigger);
+        Assert.Equal("hey_uno", record.Keyword);
         Assert.Equal(0.9, record.DetectionScore);
+    }
+
+    [Fact]
+    public async Task Rejects_options_that_do_not_match_the_model_keywords()
+    {
+        var model = new ScriptedModel(0.0) { Keywords = ["hey_uno", "hello_uno"] };
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await using var c = new WakeWordController(TestOptions.For("hello_uno", "hey_uno"), model, new ScriptedVad(0.0), new StaticTokenProvider());
+        });
     }
 
     [Fact]
@@ -114,7 +142,7 @@ public class WakeWordControllerTests
     {
         var transport = new FakeTransport();
         await using var controller = new WakeWordController(
-            new WakeWordOptions(), new ScriptedModel(0.0), new ScriptedVad(0.0), new StaticTokenProvider(), () => transport);
+            TestOptions.For("hey_uno"), new ScriptedModel(0.0), new ScriptedVad(0.0), new StaticTokenProvider(), () => transport);
 
         controller.Engine.Process(new short[16000]); // 1 s that must not be sent
         Assert.True(controller.StartManualSession());

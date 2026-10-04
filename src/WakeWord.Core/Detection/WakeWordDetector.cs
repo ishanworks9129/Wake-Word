@@ -28,7 +28,47 @@ public sealed record WakeWordDetectorOptions
     public AdaptiveThresholdOptions Adaptive { get; init; } = new();
 }
 
-public sealed record WakeWordDetection(long FrameEndSample, double Score, double Threshold);
+public sealed record WakeWordDetection(long FrameEndSample, double Score, double Threshold)
+{
+    /// <summary>Index into the engine's keywords; 0 when a detector is used on its own.</summary>
+    public int KeywordIndex { get; init; }
+
+    public string Keyword { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Picovoice-style sensitivity: 0 (fewest false accepts) to 1 (fewest misses), mapped to a threshold through
+/// the calibration table the training pipeline writes into models.json. Mirrors evaluate.threshold_for.
+/// </summary>
+public sealed class SensitivityTable
+{
+    private readonly (double Sensitivity, double Threshold)[] _points;
+
+    public SensitivityTable(IEnumerable<(double Sensitivity, double Threshold)> points)
+    {
+        _points = points.OrderBy(p => p.Sensitivity).ToArray();
+        if (_points.Length == 0)
+        {
+            throw new ArgumentException("A sensitivity table needs at least one point.", nameof(points));
+        }
+    }
+
+    public double ThresholdFor(double sensitivity)
+    {
+        var s = Math.Clamp(sensitivity, 0.0, 1.0);
+        for (var i = 1; i < _points.Length; i++)
+        {
+            var (s0, t0) = _points[i - 1];
+            var (s1, t1) = _points[i];
+            if (s <= s1)
+            {
+                return s1 == s0 ? t1 : t0 + (t1 - t0) * (s - s0) / (s1 - s0);
+            }
+        }
+
+        return _points[^1].Threshold;
+    }
+}
 
 public static class AdaptiveThreshold
 {
