@@ -146,11 +146,17 @@ Set `RUN` in the first cell to that run, run the cells down to *Configuration*, 
 #@title 10. (Optional) Recalibrate on the extended validation audio
 RECALIBRATE = False  #@param {type:"boolean"}
 if RECALIBRATE:
+    import time
+    started = time.time()
     get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
                          '--steps negatives,evaluate,export --force --negatives-split val')
+    zip_path = f'{WORK}/export/wakeword_models.zip'
+    if not os.path.exists(zip_path) or os.path.getmtime(zip_path) < started:
+        raise RuntimeError('Recalibration stopped before it finished (see the output above), so there is no new zip. '
+                           'Run this cell again: it resumes where it stopped.')
     from google.colab import files
     print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())
-    files.download(f'{WORK}/export/wakeword_models.zip')
+    files.download(zip_path)
 else:
     print('Skipped. Tick RECALIBRATE and run this cell to recalibrate a finished run.')
 """),
