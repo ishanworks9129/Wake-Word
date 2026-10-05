@@ -75,7 +75,7 @@ negatives:
   - name: musan
     kind: tar
     split: train
-    max_hours: 110
+    max_hours: 108.8  # all of it: the three folders hold 108.9 h, so a higher cap would re-stream 11 GB for nothing
     urls: [https://www.openslr.org/resources/17/musan.tar.gz]
     include: [musan/music/, musan/noise/, musan/speech/]
     noise_bank: [musan/noise/, musan/music/]
@@ -83,6 +83,93 @@ negatives:
     license: CC-BY-4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
     source_url: https://www.openslr.org/17/
+  # Conversation, so the model learns not to fire on everyday talk (validation alone only measured it).
+  # None of these recordings is in validation: other VoxPopuli year, other AMI meetings.
+  - name: voxpopuli_train
+    kind: tar
+    split: train
+    max_hours: 60
+    urls: [https://dl.fbaipublicfiles.com/voxpopuli/audios/en_2019.tar]
+    download_first: true  # 6.9 GB; see voxpopuli_val
+    license: CC0-1.0
+    license_url: https://creativecommons.org/publicdomain/zero/1.0/
+    source_url: https://github.com/facebookresearch/voxpopuli
+  - name: ami_train
+    # The 33 non-scenario meetings (EN, IB, IN; about 27 h), each twice: the far-field table microphone and
+    # the close-talk headset mix, like a device across the table and a phone held close.
+    kind: files
+    split: train
+    max_hours: 55
+    urls:
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001a/audio/EN2001a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001b/audio/EN2001b.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001d/audio/EN2001d.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001e/audio/EN2001e.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002a/audio/EN2002a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002b/audio/EN2002b.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002c/audio/EN2002c.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002d/audio/EN2002d.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2003a/audio/EN2003a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2004a/audio/EN2004a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2005a/audio/EN2005a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2006a/audio/EN2006a.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2006b/audio/EN2006b.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009b/audio/EN2009b.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009c/audio/EN2009c.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009d/audio/EN2009d.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4001/audio/IB4001.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4002/audio/IB4002.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4003/audio/IB4003.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4004/audio/IB4004.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4005/audio/IB4005.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4010/audio/IB4010.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4011/audio/IB4011.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1001/audio/IN1001.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1002/audio/IN1002.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1005/audio/IN1005.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1007/audio/IN1007.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1008/audio/IN1008.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1009/audio/IN1009.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1012/audio/IN1012.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1013/audio/IN1013.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1014/audio/IN1014.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1016/audio/IN1016.Array1-01.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001a/audio/EN2001a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001b/audio/EN2001b.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001d/audio/EN2001d.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001e/audio/EN2001e.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002a/audio/EN2002a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002b/audio/EN2002b.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002c/audio/EN2002c.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2002d/audio/EN2002d.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2003a/audio/EN2003a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2004a/audio/EN2004a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2005a/audio/EN2005a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2006a/audio/EN2006a.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2006b/audio/EN2006b.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009b/audio/EN2009b.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009c/audio/EN2009c.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2009d/audio/EN2009d.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4001/audio/IB4001.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4002/audio/IB4002.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4003/audio/IB4003.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4004/audio/IB4004.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4005/audio/IB4005.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4010/audio/IB4010.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IB4011/audio/IB4011.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1001/audio/IN1001.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1002/audio/IN1002.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1005/audio/IN1005.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1007/audio/IN1007.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1008/audio/IN1008.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1009/audio/IN1009.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1012/audio/IN1012.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1013/audio/IN1013.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1014/audio/IN1014.Mix-Headset.wav
+      - https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1016/audio/IN1016.Mix-Headset.wav
+    license: CC-BY-4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    source_url: https://groups.inf.ed.ac.uk/ami/corpus/
   - name: librispeech_val
     kind: tar
     split: val

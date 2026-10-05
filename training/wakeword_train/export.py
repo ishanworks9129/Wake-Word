@@ -69,22 +69,43 @@ def golden_vectors(fx: FeatureExtractor, classifiers: dict[str, Path], audio: np
     }
 
 
-def write_dataset_manifest(cfg: Config, hours: dict[str, float], path: Path) -> None:
-    """Corpus-level rows in the DATASET_MANIFEST.csv schema (training/data/manifest.py)."""
+# The pipeline's "val" split is the plan's dev split (5.3): it picks thresholds. "test" is kept for real recordings.
+MANIFEST_SPLIT = {"train": "train", "val": "dev"}
+
+
+def write_dataset_manifest(
+    cfg: Config,
+    hours: dict[str, float],
+    path: Path,
+    tts_seconds: dict[tuple[int, str, str], float],
+    rir_seconds: float,
+) -> None:
+    """Corpus-level rows that pass training/data/manifest.py: one per voice and use, negative source and RIR set.
+
+    tts_seconds maps (voice index, kind, split) to seconds of synthetic clips; kind is "positive" or
+    "hard_negative" (near-misses), split "train" or "dev" (held-out speakers). Sources that contributed
+    no audio are left out.
+    """
     today = datetime.now(timezone.utc).date().isoformat()
     rows = []
-    for v in cfg.tts.voices:
-        rows.append({"path": f"tts/{v.name}", "kind": "positive", "split": "train", "source": f"Piper voice {v.name}",
-                     "url": v.model_url, "license": v.license, "license_url": v.license_url, "retrieved": today,
-                     "duration_seconds": "", "speaker_id": "", "release_id": ""})
+
+    def row(path, kind, split, source, url, licensed, seconds, speaker=""):
+        rows.append({"path": path, "kind": kind, "split": split, "source": source, "url": url,
+                     "license": licensed.license, "license_url": licensed.license_url, "retrieved": today,
+                     "duration_seconds": round(seconds, 1), "speaker_id": speaker, "release_id": ""})
+
+    for (i, kind, split), seconds in sorted(tts_seconds.items()):
+        v = cfg.tts.voices[i]
+        if seconds > 0:
+            # Synthetic speakers are tracked per voice; held-out ones get their own id so they never share a split.
+            speaker = (v.name + ("/held-out" if split == "dev" else "")) if kind == "positive" else ""
+            row(f"tts/{v.name}/{kind}/{split}", kind, split, f"Piper voice {v.name}", v.model_url, v, seconds, speaker)
     for src in cfg.negatives:
-        rows.append({"path": f"negatives/{src.name}", "kind": "negative", "split": src.split, "source": src.name,
-                     "url": src.source_url or src.urls[0], "license": src.license, "license_url": src.license_url,
-                     "retrieved": today, "duration_seconds": round(hours.get(src.name, 0.0) * 3600, 1),
-                     "speaker_id": "", "release_id": ""})
-    rows.append({"path": "rir/mit", "kind": "rir", "split": "train", "source": "MIT Acoustical Reverberation Scene Statistics Survey",
-                 "url": cfg.rir_url, "license": cfg.rir.license, "license_url": cfg.rir.license_url, "retrieved": today,
-                 "duration_seconds": "", "speaker_id": "", "release_id": ""})
+        if hours.get(src.name, 0.0) > 0:
+            row(f"negatives/{src.name}", "negative", MANIFEST_SPLIT[src.split], src.name, src.source_url or src.urls[0],
+                src, hours[src.name] * 3600)
+    if rir_seconds > 0:
+        row("rir/mit", "rir", "train", "MIT Acoustical Reverberation Scene Statistics Survey", cfg.rir_url, cfg.rir, rir_seconds)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
@@ -100,6 +121,8 @@ def write_package(
     hours: dict[str, float],
     golden: dict,
     notes: list[str],
+    tts_seconds: dict[tuple[int, str, str], float],
+    rir_seconds: float,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, p in {**feature_models, **classifiers}.items():
@@ -150,7 +173,7 @@ def write_package(
     }
     (out_dir / "models.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (out_dir / "golden.json").write_text(json.dumps(golden), encoding="utf-8")
-    write_dataset_manifest(cfg, hours, out_dir / "DATASET_MANIFEST.csv")
+    write_dataset_manifest(cfg, hours, out_dir / "DATASET_MANIFEST.csv", tts_seconds, rir_seconds)
     (out_dir / "METRICS.md").write_text(metrics_markdown(cfg, evaluations, hours, notes), encoding="utf-8")
 
     zip_path = out_dir.with_suffix(".zip")

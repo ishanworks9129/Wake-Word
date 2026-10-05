@@ -77,17 +77,24 @@ class EmbeddingStore:
         tmp.replace(self.index_path)
 
     def load(self, max_frames: int | None = None) -> np.ndarray:
-        """All shards concatenated into one float16 [T, 96] array."""
-        arrays, total = [], 0
+        """All shards concatenated into one float16 [T, 96] array.
+
+        Filled shard by shard into one preallocated array, so peak RAM is the result, not twice it.
+        """
+        shards, total = [], 0
         for s in self.index["shards"]:
-            arrays.append(np.load(self.root / s["file"]))
-            total += s["frames"]
             if max_frames and total >= max_frames:
                 break
-        if not arrays:
-            return np.empty((0, EMBEDDING_DIM), dtype=np.float16)
-        data = np.concatenate(arrays)
-        return data[:max_frames] if max_frames else data
+            shards.append(s)
+            total += s["frames"]
+        n = min(total, max_frames) if max_frames else total
+        out = np.empty((n, EMBEDDING_DIM), dtype=np.float16)
+        pos = 0
+        for s in shards:
+            take = min(s["frames"], n - pos)
+            out[pos:pos + take] = np.load(self.root / s["file"], mmap_mode="r")[:take]
+            pos += take
+        return out
 
 
 def sample_windows(stream: np.ndarray, n: int, rng: np.random.Generator) -> np.ndarray:

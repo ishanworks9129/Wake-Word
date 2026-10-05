@@ -227,6 +227,23 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(all("NC" not in s.license.upper() for s in cfg.negatives))
             self.assertTrue(all(s.kind in ("tar", "files") for s in cfg.negatives))
 
+    def test_exported_dataset_manifest_passes_the_license_check(self):
+        from data.manifest import read_rows, validate
+        from wakeword_train.export import write_dataset_manifest
+
+        cfg = load_config(ROOT / "configs" / "uno.yaml")
+        hours = {src.name: 10.0 for src in cfg.negatives}
+        hours[cfg.negatives[0].name] = 0.0  # a source that contributed nothing is left out, not listed at 0 s
+        tts = {(0, "positive", "train"): 3600.0, (0, "positive", "dev"): 400.0, (0, "hard_negative", "train"): 3000.0}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "DATASET_MANIFEST.csv"
+            write_dataset_manifest(cfg, hours, path, tts, rir_seconds=270.0)
+            rows = read_rows(path)
+            report = validate(rows)
+        self.assertEqual([], report.errors)
+        self.assertNotIn(f"negatives/{cfg.negatives[0].name}", [r["path"] for r in rows])
+        self.assertEqual({"train", "dev"}, {r["split"] for r in rows})
+
     def test_overrides_and_unknown_keys(self):
         cfg = load_config(ROOT / "configs" / "smoke.yaml", {"train.steps": 7})
         self.assertEqual(cfg.train.steps, 7)

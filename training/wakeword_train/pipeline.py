@@ -340,6 +340,28 @@ class Run:
         held = pos.subset(is_held_out(pos.speakers, cfg.tts.holdout_every_nth_speaker))
         return [aug(held.clip(i), end_offset=EVAL_TRAILING) for i in range(len(held))]
 
+    def tts_seconds(self) -> dict[tuple[int, str, str], float]:
+        """(voice index, manifest kind, split) -> seconds of generated clips, for DATASET_MANIFEST.csv."""
+        out: dict[tuple[int, str, str], float] = {}
+        for p in self.cfg.phrases:
+            for kind, manifest_kind in (("pos", "positive"), ("adv", "hard_negative")):
+                path = self.work / "clips" / f"{p.id}_{kind}.npz"
+                if not path.exists():
+                    continue
+                with np.load(path) as z:  # reads only these two arrays, not the audio
+                    lengths, speakers = np.diff(z["offsets"]), z["speakers"]
+                # Held-out speakers' positives are the dev set; every near-miss clip is trained on.
+                held = is_held_out(speakers, self.cfg.tts.holdout_every_nth_speaker) if kind == "pos" else np.zeros(len(speakers), bool)
+                for voice in np.unique(speakers // 100000):
+                    for split, mask in (("train", ~held), ("dev", held)):
+                        sel = (speakers // 100000 == voice) & mask
+                        key = (int(voice), manifest_kind, split)
+                        out[key] = out.get(key, 0.0) + float(lengths[sel].sum()) / SAMPLE_RATE
+        return out
+
+    def rir_seconds(self) -> float:
+        return sum(len(r) for r in load_rirs(self.asset("rir.zip"))) / SAMPLE_RATE
+
     def evaluate_step(self) -> dict:
         from .evaluate import evaluate_phrase, stream_scores
 
@@ -381,10 +403,13 @@ class Run:
         golden = golden_vectors(self.features(), classifiers, self.eval_audio(cfg.phrases[0].id)[0])
         evaluations = {p.id: json.loads((self.work / "eval" / f"{p.id}.json").read_text()) for p in cfg.phrases}
         hours = self.hours()
-        val_sources = ", ".join(f"{src.name} ({hours.get(src.name, 0):.0f} h)" for src in cfg.negatives
-                                if src.split == "val" and hours.get(src.name, 0) > 0)
+        def used(split: str) -> str:
+            return ", ".join(f"{src.name} ({hours.get(src.name, 0):.0f} h)" for src in cfg.negatives
+                             if src.split == split and hours.get(src.name, 0) > 0)
+
+        val_sources = used("val")
         notes = [
-            "Provisional v0: positives are synthetic (Piper) only; negatives are read speech, music and noise.",
+            f"Provisional v0: positives are synthetic (Piper) only; training negatives are {used('train')}.",
             f"Recall is measured on held-out synthetic voices and FA/hour on {val_sources}, so real-world numbers will differ. "
             "Re-measure on the real-recording test set (plan 5.3) before release.",
             "All training data is commercially licensed; see DATASET_MANIFEST.csv.",
@@ -392,7 +417,7 @@ class Run:
         zip_path = write_package(
             cfg, out,
             {"melspectrogram": self.asset("melspectrogram.onnx"), "embedding": self.asset("embedding_model.onnx")},
-            classifiers, evaluations, hours, golden, notes,
+            classifiers, evaluations, hours, golden, notes, self.tts_seconds(), self.rir_seconds(),
         )
         print(f"model package: {zip_path}")
         return {"zip": str(zip_path), "onnx_parity_max_diff": parity}

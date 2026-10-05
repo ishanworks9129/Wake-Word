@@ -45,7 +45,7 @@ This notebook builds both wake-word models from openly licensed data, all of it 
 | Setup | Downloads the feature models, the Piper voice and room recordings | 2 min |
 | Preview | Lets you listen to how the voices say each phrase | 1 min |
 | Voices | Generates 20,000 spoken examples per phrase, plus 20,000 near-misses | about 3 h (about 4 min per 2,000) |
-| Background audio | Streams about 550 hours of speech, meetings, music and noise and turns it into features | 1.5–3.5 h |
+| Background audio | Streams about 660 hours of speech, meetings, parliament, music and noise and turns it into features | 2–4 h |
 | Features | Mixes the examples into noisy rooms and computes features | 15–30 min |
 | Train | Trains one small classifier per phrase | 10–20 min |
 | Evaluate | Measures recall and false accepts per hour and calibrates sensitivity | 5 min |
@@ -159,6 +159,37 @@ if RECALIBRATE:
     files.download(zip_path)
 else:
     print('Skipped. Tick RECALIBRATE and run this cell to recalibrate a finished run.')
+"""),
+        md("""
+## (Optional) Retrain a finished run with conversational background audio
+Only for a run whose background audio predates the meeting and parliament recordings in training, such as `uno-v1` (its models false-fire on conversation). New runs already include them, so skip this.
+
+**Needs a T4 GPU.** Set `RUN`, run the cells down to *Configuration*, then tick **RETRAIN** below and run it. It downloads about 115 hours of extra training audio, retrains both models (the voices are reused, so no 3-hour voice step), re-measures them and downloads a new zip: about 1–1.5 hours. The old models are kept in `models/previous/`.
+"""),
+        code("""
+#@title 11. (Optional) Retrain with conversational background audio
+RETRAIN = False  #@param {type:"boolean"}
+if RETRAIN:
+    import glob, shutil, time, torch
+    if not torch.cuda.is_available():
+        raise RuntimeError('Retraining needs a GPU: Runtime -> Change runtime type -> T4 GPU, then run the cells from the top.')
+    started = time.time()
+    previous = f'{WORK}/models/previous'
+    os.makedirs(previous, exist_ok=True)
+    if not os.listdir(previous):  # first attempt: set the old models aside; a re-run keeps what it already retrained
+        for f in glob.glob(f'{WORK}/models/*.pt') + glob.glob(f'{WORK}/models/*_history.json'):
+            shutil.move(f, previous)
+    get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
+                         '--steps negatives,train,evaluate,export --force --negatives-split train')
+    zip_path = f'{WORK}/export/wakeword_models.zip'
+    if not os.path.exists(zip_path) or os.path.getmtime(zip_path) < started:
+        raise RuntimeError('Retraining stopped before it finished (see the output above), so there is no new zip. '
+                           'Run this cell again: it resumes where it stopped.')
+    from google.colab import files
+    print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())
+    files.download(zip_path)
+else:
+    print('Skipped. Tick RETRAIN and run this cell to retrain a finished run.')
 """),
         md("""
 ## What you get
