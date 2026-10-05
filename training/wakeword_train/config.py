@@ -104,6 +104,19 @@ class EvalConfig:
 
 
 @dataclass
+class TestConfig:
+    """Your own recordings with no wake word in them, such as team meetings: the frozen test set (plan 5.3).
+
+    Only ever measured on, never trained or calibrated on, so their false-accept rate stays an honest estimate.
+    """
+
+    folder: str = ""  # audio or video files, searched recursively (Meet and Teams .mp4 work); empty = no test step
+    license: str = "Internal-Consent"  # participants agreed to training use (training/data/manifest.py)
+    license_url: str = ""  # where that consent is recorded
+    release_id: str = ""  # reference to the consent or its approval
+
+
+@dataclass
 class Config:
     run_name: str
     phrases: list[PhraseConfig]
@@ -117,6 +130,7 @@ class Config:
     augment: AugmentConfig = field(default_factory=AugmentConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    test: TestConfig = field(default_factory=TestConfig)
     window_samples: int = 32000  # 2.0 s of audio -> exactly 16 embeddings
     # Folder holding assets/, negatives/ and noise/ shared by many runs (Wake Word Studio); empty = the work folder.
     shared_dir: str = ""

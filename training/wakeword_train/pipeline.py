@@ -10,6 +10,8 @@ negatives) also resume part-way, so a dropped Colab session loses minutes, not h
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import multiprocessing
 import os
@@ -30,7 +32,7 @@ from .sources import download, iter_file_audio, iter_tar_audio, load_rirs
 from .store import EmbeddingStore, FRAMES_PER_HOUR
 from .tts import ClipSet, PiperSynth, generate, is_held_out
 
-STEPS = ["setup", "preview", "tts", "negatives", "features", "train", "evaluate", "export"]
+STEPS = ["setup", "preview", "tts", "negatives", "features", "train", "evaluate", "test", "export"]
 SHARED_DIRS = ("assets", "noise", "negatives")
 EVAL_WINDOW = 4 * SAMPLE_RATE  # validation positives: clip ends 1 s before the end of a 4 s window
 EVAL_TRAILING = SAMPLE_RATE
@@ -386,6 +388,90 @@ class Run:
                   f"over {ev.negative_hours:.1f} h")
         return summary
 
+    def test_step(self) -> dict:
+        """False accepts on your own recordings (cfg.test.folder) at every calibrated sensitivity.
+
+        Writes eval/<phrase>_test.json (totals, which go in the package) and eval/test_fires.csv (file and
+        time of every fire at the most sensitive setting, to check by ear; it stays out of the package).
+        """
+        from eval.metrics import poisson_upper_bound
+
+        from .evaluate import count_fires, stream_scores
+        from .testset import clock, decode_media, media_files, score_seconds
+
+        cfg = self.cfg
+        folder = Path(cfg.test.folder) if cfg.test.folder else None
+        files = media_files(folder) if folder and folder.is_dir() else []
+        if not files:
+            print(f"no recordings to test on ({cfg.test.folder or 'test.folder is not set'}); skipping")
+            return {"skipped": True}
+        fx = self.features()
+        cache = self.work / "test" / "features"  # embeddings only, keyed by a hash: no audio or names kept
+        cache.mkdir(parents=True, exist_ok=True)
+        streams = []
+        for i, f in enumerate(files):
+            rel = f.relative_to(folder).as_posix()
+            c = cache / (hashlib.sha1(rel.encode()).hexdigest()[:16] + ".npy")
+            if c.exists():
+                emb = np.load(c)
+            else:
+                emb = fx.embed_long(decode_media(f)).astype(np.float16)
+                with open(c.with_suffix(".tmp"), "wb") as out:
+                    np.save(out, emb)
+                c.with_suffix(".tmp").replace(c)
+            streams.append((rel, emb))
+            print(f"  {i + 1}/{len(files)} recordings, {sum(e.shape[0] for _, e in streams) / FRAMES_PER_HOUR:.1f} h")
+        hours = sum(e.shape[0] for _, e in streams) / FRAMES_PER_HOUR
+
+        def fire_frames(scores: np.ndarray, threshold: float) -> np.ndarray:
+            return count_fires(scores, threshold, cfg.eval.consecutive_frames, cfg.eval.refractory_seconds)
+
+        summary, fires = {}, []
+        for p in cfg.phrases:
+            model = self.load_model(p.id)
+            table = json.loads((self.work / "eval" / f"{p.id}.json").read_text())["sensitivity_table"]
+            scores = [(rel, stream_scores(model, emb, "cpu")) for rel, emb in streams]
+            rows = []
+            for s, t in table:
+                n = sum(len(fire_frames(sc, t)) for _, sc in scores)
+                rows.append({"sensitivity": s, "threshold": t, "false_accepts": n,
+                             "fa_per_hour": n / hours, "fa_per_hour_upper": poisson_upper_bound(n) / hours})
+            lowest = min(t for _, t in table)
+            for rel, sc in scores:
+                for k in fire_frames(sc, lowest).tolist():
+                    fires.append({"keyword": p.id, "file": rel, "time": clock(score_seconds(k)), "score": round(float(sc[k]), 3)})
+            result = {"files": len(files), "hours": hours, "model_sha256": self.model_hash(p.id), "by_sensitivity": rows}
+            (self.work / "eval" / f"{p.id}_test.json").write_text(json.dumps(result, indent=1))
+            default = next(r for r in rows if r["sensitivity"] == cfg.eval.default_sensitivity)
+            summary[p.id] = {k: default[k] for k in ("threshold", "false_accepts", "fa_per_hour", "fa_per_hour_upper")}
+            print(f"{p.display}: {default['false_accepts']} false accepts in {hours:.1f} h of your recordings at sensitivity "
+                  f"{cfg.eval.default_sensitivity} ({default['fa_per_hour']:.2f}/h, at most {default['fa_per_hour_upper']:.2f}/h)")
+        with open(self.work / "eval" / "test_fires.csv", "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=["keyword", "file", "time", "score"])
+            w.writeheader()
+            w.writerows(sorted(fires, key=lambda r: (r["file"], r["time"], r["keyword"])))
+        print(f"{len(fires)} fires at the most sensitive setting listed in {self.work / 'eval' / 'test_fires.csv'}: "
+              "listen to each to check nobody actually said the wake phrase")
+        return {"hours": hours, "files": len(files), **summary}
+
+    def model_hash(self, phrase_id: str) -> str:
+        return hashlib.sha256((self.work / "models" / f"{phrase_id}.pt").read_bytes()).hexdigest()
+
+    def current_tests(self, evaluations: dict[str, dict]) -> dict[str, dict]:
+        """Test results that still match the models and calibration; stale ones (after a retrain) are left out."""
+        out = {}
+        for p in self.cfg.phrases:
+            path = self.work / "eval" / f"{p.id}_test.json"
+            if not path.exists():
+                continue
+            test = json.loads(path.read_text())
+            thresholds = [r["threshold"] for r in test["by_sensitivity"]]
+            if test["model_sha256"] == self.model_hash(p.id) and thresholds == [t for _, t in evaluations[p.id]["sensitivity_table"]]:
+                out[p.id] = test
+            else:
+                print(f"{p.id}: test results are from older models or calibration; re-run the test step to include them")
+        return out if len(out) == len(self.cfg.phrases) else {}
+
     def export_step(self) -> dict:
         from .export import check_parity, export_onnx, golden_vectors, write_package
 
@@ -418,6 +504,7 @@ class Run:
             cfg, out,
             {"melspectrogram": self.asset("melspectrogram.onnx"), "embedding": self.asset("embedding_model.onnx")},
             classifiers, evaluations, hours, golden, notes, self.tts_seconds(), self.rir_seconds(),
+            self.current_tests(evaluations),
         )
         print(f"model package: {zip_path}")
         return {"zip": str(zip_path), "onnx_parity_max_diff": parity}

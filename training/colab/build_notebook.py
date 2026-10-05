@@ -192,6 +192,45 @@ else:
     print('Skipped. Tick RETRAIN and run this cell to retrain a finished run.')
 """),
         md("""
+## (Optional) Test on your own recordings
+Measures how often the models fire by mistake on your own audio, such as team meetings from Google Meet or Teams. They are only measured on, never trained or calibrated on, so the result stays an honest real-world estimate (plan 5.3).
+
+1. **Only recordings whose participants agreed to this use.** Leave out meetings with outside people unless they agreed too, and any meeting where someone actually says the wake phrase.
+2. Put the files in one Drive folder (subfolders are fine). Meet saves `.mp4` to *My Drive → Meet Recordings*; download Teams recordings from OneDrive or SharePoint. Copy the ones you can use rather than pointing at the whole Meet folder.
+3. Fill in the form, tick **TEST** and run the cell. About 10 minutes per 30 hours on a T4, about an hour on CPU.
+
+Only feature numbers are kept, never the audio. The zip gets totals only; `test_fires.csv` (file and time of each fire, to check by ear) is downloaded separately and is not part of the package.
+"""),
+        code("""
+#@title 12. (Optional) Test on your own recordings
+TEST_FOLDER = '/content/drive/MyDrive/wakeword/meetings'  #@param {type:"string"}
+CONSENT_URL = ''  #@param {type:"string"}
+CONSENT_ID = ''  #@param {type:"string"}
+TEST = False  #@param {type:"boolean"}
+if TEST:
+    import shlex, time
+    if not os.path.isdir(TEST_FOLDER):
+        raise RuntimeError(f'No folder {TEST_FOLDER}: create it in Google Drive and put the recordings in it.')
+    started = time.time()
+    sets = {'test.folder': TEST_FOLDER, 'test.license_url': CONSENT_URL, 'test.release_id': CONSENT_ID}
+    args = ' '.join(f'--set {shlex.quote(f"{k}={v}")}' for k, v in sets.items() if v)
+    get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
+                         f'--steps test,export --force {args}')
+    zip_path = f'{WORK}/export/wakeword_models.zip'
+    if not os.path.exists(zip_path) or os.path.getmtime(zip_path) < started:
+        raise RuntimeError('The test stopped before it finished (see the output above). Run this cell again: '
+                           'recordings already processed are not processed again.')
+    if not (CONSENT_URL and CONSENT_ID):
+        print('Note: without CONSENT_URL and CONSENT_ID, DATASET_MANIFEST.csv will fail the license check '
+              '(python -m data.manifest). Fill them in and run this cell again before sharing the package.')
+    from google.colab import files
+    print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())
+    files.download(zip_path)
+    files.download(f'{WORK}/eval/test_fires.csv')
+else:
+    print('Skipped. Fill in the form, tick TEST and run this cell to test on your own recordings.')
+"""),
+        md("""
 ## What you get
 `wakeword_models.zip` holds `melspectrogram.onnx`, `embedding_model.onnx`, `hey_uno.onnx`, `hello_uno.onnx`, `models.json` (keywords, sensitivity tables and detector settings), `golden.json` (parity vectors for the app), `METRICS.md` and `DATASET_MANIFEST.csv`. Copy it into the repo as `models/` and share `METRICS.md` with the team.
 

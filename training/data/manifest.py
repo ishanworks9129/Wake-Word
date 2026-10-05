@@ -6,7 +6,8 @@ Every audio file used for training or evaluation has one row. The check fails on
   - missing provenance (url, license_url, retrieved date) or non-positive durations
   - duplicate paths
   - a positive-recording speaker appearing in both the test split and train/dev (plan 5.2: held-out speakers)
-  - own recordings without a signed contributor release id (plan 4.2)
+  - own recordings without a signed contributor release id (plan 4.2), or internal recordings (such as team
+    meetings) without a reference to the participants' consent
 
 Usage:
     python -m data.manifest DATASET_MANIFEST.csv [--allow-share-alike]
@@ -31,7 +32,10 @@ SPLITS = {"train", "dev", "test"}
 ALLOWED_LICENSES = {
     "CC0-1.0", "CC-BY-3.0", "CC-BY-4.0", "Apache-2.0", "MIT", "PDDL-1.0", "Public-Domain",
     "Contributor-Release",  # our own recordings under the signed release in plan 4.2
+    "Internal-Consent",  # internal recordings (e.g. meetings) whose participants agreed to training use
 }
+NEEDS_RELEASE_ID = {"Contributor-Release": "own recording without a signed release_id",
+                    "Internal-Consent": "internal recording without a release_id referencing the participants' consent"}
 SHARE_ALIKE_LICENSES = {"CC-BY-SA-3.0", "CC-BY-SA-4.0"}
 
 
@@ -87,8 +91,8 @@ def validate(rows: list[dict[str, str]], allow_share_alike: bool = False) -> Rep
         license_id = row["license"].strip()
         if problem := _license_problem(license_id, allow_share_alike):
             report.errors.append(f"{where}: {problem}")
-        if license_id == "Contributor-Release" and not row["release_id"].strip():
-            report.errors.append(f"{where}: own recording without a signed release_id")
+        if license_id in NEEDS_RELEASE_ID and not row["release_id"].strip():
+            report.errors.append(f"{where}: {NEEDS_RELEASE_ID[license_id]}")
 
         for col in ("source", "url", "license_url"):
             if not row[col].strip():

@@ -79,6 +79,7 @@ def write_dataset_manifest(
     path: Path,
     tts_seconds: dict[tuple[int, str, str], float],
     rir_seconds: float,
+    test_hours: float = 0.0,
 ) -> None:
     """Corpus-level rows that pass training/data/manifest.py: one per voice and use, negative source and RIR set.
 
@@ -106,6 +107,10 @@ def write_dataset_manifest(
                 src, hours[src.name] * 3600)
     if rir_seconds > 0:
         row("rir/mit", "rir", "train", "MIT Acoustical Reverberation Scene Statistics Survey", cfg.rir_url, cfg.rir, rir_seconds)
+    if test_hours > 0:  # one aggregate row: file names of internal recordings stay out of the package
+        row("test/own-recordings", "negative", "test", "Own recordings (internal, with consent)", "internal", cfg.test,
+            test_hours * 3600)
+        rows[-1]["release_id"] = cfg.test.release_id
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
@@ -123,7 +128,9 @@ def write_package(
     notes: list[str],
     tts_seconds: dict[tuple[int, str, str], float],
     rir_seconds: float,
+    tests: dict[str, dict] | None = None,
 ) -> Path:
+    tests = tests or {}
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, p in {**feature_models, **classifiers}.items():
         shutil.copy(p, out_dir / p.name)
@@ -151,6 +158,11 @@ def write_package(
                 "positives": ev["positives"],
             },
         })
+        if phrase.id in tests:  # your own recordings, at the default sensitivity
+            t = tests[phrase.id]
+            d = next(r for r in t["by_sensitivity"] if r["sensitivity"] == cfg.eval.default_sensitivity)
+            keywords[-1]["test"] = {"hours": t["hours"], "false_accepts": d["false_accepts"],
+                                    "fa_per_hour": d["fa_per_hour"], "fa_per_hour_upper": d["fa_per_hour_upper"]}
 
     manifest = {
         "format": PACKAGE_FORMAT,
@@ -173,8 +185,9 @@ def write_package(
     }
     (out_dir / "models.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (out_dir / "golden.json").write_text(json.dumps(golden), encoding="utf-8")
-    write_dataset_manifest(cfg, hours, out_dir / "DATASET_MANIFEST.csv", tts_seconds, rir_seconds)
-    (out_dir / "METRICS.md").write_text(metrics_markdown(cfg, evaluations, hours, notes), encoding="utf-8")
+    test_hours = next(iter(tests.values()))["hours"] if tests else 0.0
+    write_dataset_manifest(cfg, hours, out_dir / "DATASET_MANIFEST.csv", tts_seconds, rir_seconds, test_hours)
+    (out_dir / "METRICS.md").write_text(metrics_markdown(cfg, evaluations, hours, notes, tests), encoding="utf-8")
 
     zip_path = out_dir.with_suffix(".zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -183,7 +196,8 @@ def write_package(
     return zip_path
 
 
-def metrics_markdown(cfg: Config, evaluations: dict[str, dict], hours: dict[str, float], notes: list[str]) -> str:
+def metrics_markdown(cfg: Config, evaluations: dict[str, dict], hours: dict[str, float], notes: list[str],
+                     tests: dict[str, dict] | None = None) -> str:
     lines = [f"# Wake word models: {cfg.run_name}", ""]
     lines += [f"- {n}" for n in notes] + [""]
     lines += ["| Keyword | Sensitivity | Threshold | Recall (held-out synthetic voices) | False accepts / hour | Negative hours |",
@@ -197,5 +211,15 @@ def metrics_markdown(cfg: Config, evaluations: dict[str, dict], hours: dict[str,
     tables = {p.id: dict((round(s, 1), t) for s, t in evaluations[p.id]["sensitivity_table"]) for p in cfg.phrases}
     for s in np.round(np.arange(0.0, 1.0001, 0.1), 1):
         lines.append(f"| {s:.1f} | " + " | ".join(f"{tables[p.id][float(s)]:.3f}" for p in cfg.phrases) + " |")
+    if tests:
+        first = next(iter(tests.values()))
+        lines += ["", "## Test: your own recordings (never trained or calibrated on)", "",
+                  f"{first['files']} recordings, {first['hours']:.1f} h. False accepts per hour, with the 95% upper bound "
+                  "in brackets; the Section 3 target is at most 0.2 (quiet) to 1.0 (loud).", "",
+                  "| Sensitivity | " + " | ".join(p.display for p in cfg.phrases) + " |", "| --- |" + " --- |" * len(cfg.phrases)]
+        for i, r in enumerate(first["by_sensitivity"]):
+            cells = [tests[p.id]["by_sensitivity"][i] for p in cfg.phrases]
+            lines.append(f"| {r['sensitivity']:.1f} | " + " | ".join(
+                f"{c['fa_per_hour']:.2f} ({c['fa_per_hour_upper']:.2f})" for c in cells) + " |")
     lines += ["", "## Training audio (hours)", ""] + [f"- {k}: {v:.1f}" for k, v in hours.items()]
     return "\n".join(lines) + "\n"

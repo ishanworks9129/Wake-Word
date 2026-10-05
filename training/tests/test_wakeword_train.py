@@ -244,6 +244,25 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn(f"negatives/{cfg.negatives[0].name}", [r["path"] for r in rows])
         self.assertEqual({"train", "dev"}, {r["split"] for r in rows})
 
+    def test_internal_recordings_need_a_consent_reference(self):
+        from data.manifest import read_rows, validate
+        from wakeword_train.export import write_dataset_manifest
+
+        cfg = load_config(ROOT / "configs" / "uno.yaml", {"test.license_url": "https://intranet/consent"})
+        hours = {src.name: 10.0 for src in cfg.negatives}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "m.csv"
+            write_dataset_manifest(cfg, hours, path, {(0, "positive", "train"): 60.0}, 270.0, test_hours=30.0)
+            errors = validate(read_rows(path)).errors
+            self.assertEqual(1, len(errors))
+            self.assertIn("consent", errors[0])
+            cfg.test.release_id = "HR-2026-114"
+            write_dataset_manifest(cfg, hours, path, {(0, "positive", "train"): 60.0}, 270.0, test_hours=30.0)
+            rows = read_rows(path)
+            self.assertEqual([], validate(rows).errors)
+        test_row = next(r for r in rows if r["split"] == "test")
+        self.assertEqual(("test/own-recordings", "108000.0"), (test_row["path"], test_row["duration_seconds"]))
+
     def test_overrides_and_unknown_keys(self):
         cfg = load_config(ROOT / "configs" / "smoke.yaml", {"train.steps": 7})
         self.assertEqual(cfg.train.steps, 7)
