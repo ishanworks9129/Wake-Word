@@ -13,6 +13,7 @@ import argparse
 import json
 import multiprocessing
 import os
+import tempfile
 import time
 import wave
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -214,6 +215,8 @@ class Run:
                     store.mark_exhausted(src.name, key)
                 store.flush()
                 flush_noise()
+                if src.download_first:
+                    self._archive_copy(src, key).unlink(missing_ok=True)
 
         parts = [np.load(f) for f in sorted(noise_dir.glob("*.npy"))]
         rng = np.random.default_rng(cfg.train.seed)
@@ -231,7 +234,8 @@ class Run:
             parts = [("files", lambda skip: iter_file_audio(src.urls, skip_members=skip))]
         elif src.kind == "tar":
             accept = (lambda name: not src.include or any(s in name for s in src.include))
-            parts = [(url, lambda skip, url=url: iter_tar_audio(url, accept, skip_members=skip)) for url in src.urls]
+            parts = [(url, lambda skip, url=url: iter_tar_audio(url, accept, skip_members=skip, local=self._fetch(src, url)))
+                     for url in src.urls]
         else:
             raise ValueError(f"{src.name}: unknown negatives kind {src.kind!r}; use 'tar' or 'files'")
         for key, open_part in parts:
@@ -243,6 +247,18 @@ class Run:
             where = f"{len(src.urls)} files from file {skip}" if src.kind == "files" else f"{key} from member {skip}"
             print(f"{src.name}: streaming {where} ({store.hours(src.name):.1f}/{src.max_hours} h)")
             yield key, open_part(skip)
+
+    def _archive_copy(self, src, url: str) -> Path:
+        # Local disk, not the work folder: in Colab that is Google Drive, and GBs written there can drop the mount.
+        return Path(tempfile.gettempdir()) / "wakeword_downloads" / src.name / url.rstrip("/").rsplit("/", 1)[-1]
+
+    def _fetch(self, src, url: str) -> Path | None:
+        if not src.download_first:
+            return None
+        path = self._archive_copy(src, url)
+        print(f"{src.name}: downloading {url} to disk first (resumes if interrupted)")
+        download(url, path)
+        return path
 
     def features_step(self) -> dict:
         cfg = self.cfg

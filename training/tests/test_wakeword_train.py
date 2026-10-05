@@ -186,6 +186,13 @@ class TarSourceTests(unittest.TestCase):
             got = [(i, a.shape[0]) for i, _, a in sources.iter_tar_audio("https://x/a.tar", lambda name: True)]
         self.assertEqual([(0, 1000), (1, 2000), (2, 3000)], got)
 
+        with tempfile.TemporaryDirectory() as d:  # a downloaded copy reads the same, with no network
+            local = Path(d) / "a.tar"
+            local.write_bytes(data)
+            with mock.patch.object(sources.requests, "get", side_effect=AssertionError("no network")):
+                got = [(i, a.shape[0]) for i, _, a in sources.iter_tar_audio("https://x/a.tar", lambda n: True, 1, local=local)]
+            self.assertEqual([(1, 2000), (2, 3000)], got)
+
 
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):

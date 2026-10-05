@@ -102,6 +102,7 @@ negatives:
     split: val
     max_hours: 40
     urls: [https://dl.fbaipublicfiles.com/voxpopuli/audios/en_2020.tar]  # whole European Parliament sessions
+    download_first: true  # 5.2 GB; the server resets streams left idle during hours-long sessions
     license: CC0-1.0
     license_url: https://creativecommons.org/publicdomain/zero/1.0/
     source_url: https://github.com/facebookresearch/voxpopuli

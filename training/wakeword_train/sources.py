@@ -6,6 +6,7 @@ import io
 import tarfile
 import time
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -71,25 +72,37 @@ def decode(data: bytes) -> np.ndarray:
     return to_16k_mono_int16(audio, sr)
 
 
+@contextmanager
+def _open_archive(url: str, local: Path | None):
+    if local is not None:
+        with open(local, "rb") as f:
+            yield f
+    else:
+        with requests.get(url, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            yield r.raw
+
+
 def iter_tar_audio(
     url: str,
     accept: Callable[[str], bool],
     skip_members: int = 0,
     retries: int = 5,
+    local: Path | None = None,
 ) -> Iterator[tuple[int, str, np.ndarray]]:
     """Streams a remote .tar/.tar.gz without saving it, yielding (member_index, name, int16 16 kHz audio).
 
     member_index counts every regular file in archive order, so a crashed run can resume with
     skip_members=<last index + 1>. Connection drops reconnect and skip ahead automatically.
+    With local, reads that already-downloaded copy of url instead.
     """
     index = -1
     next_needed = skip_members
     for attempt in range(retries):
         try:
-            with requests.get(url, stream=True, timeout=120) as r:
-                r.raise_for_status()
+            with _open_archive(url, local) as raw:
                 index = -1
-                with tarfile.open(fileobj=r.raw, mode="r|*") as tf:
+                with tarfile.open(fileobj=raw, mode="r|*") as tf:
                     for member in tf:
                         if not member.isfile():
                             continue

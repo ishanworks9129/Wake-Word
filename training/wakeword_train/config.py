@@ -55,6 +55,9 @@ class NegativeSource(Licensed):
     max_hours: float
     include: list[str] = field(default_factory=list)  # member path substrings to keep; empty keeps all audio
     noise_bank: list[str] = field(default_factory=list)  # member path substrings also added to the augmentation noise bank
+    # Fetch each archive to disk before reading it (deleted when done): for servers that reset a stream left
+    # idle while long recordings are processed, which would otherwise mean re-streaming from the start.
+    download_first: bool = False
     source_url: str = ""
 
 
