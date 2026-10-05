@@ -140,6 +140,53 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(self.fx.embed(np.zeros(MIN_EMBED_SAMPLES, np.int16)).shape, (1, 96))
 
 
+class TarSourceTests(unittest.TestCase):
+    def test_connection_reset_mid_archive_reconnects_and_resumes(self):
+        import io
+        import tarfile
+        import wave
+        from unittest import mock
+
+        import urllib3
+
+        from wakeword_train import sources
+
+        def wav(n):
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(16000)
+                w.writeframes(np.full(n, n, dtype=np.int16).tobytes())
+            return buf.getvalue()
+
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w") as t:
+            for i, n in enumerate((1000, 2000, 3000)):
+                data = wav(n)
+                info = tarfile.TarInfo(f"a/{i}.wav")
+                info.size = len(data)
+                t.addfile(info, io.BytesIO(data))
+        data = archive.getvalue()
+
+        class Resets(io.BytesIO):  # the server drops the connection partway through the second file
+            def read(self, size=-1):
+                if self.tell() > 4000:
+                    raise urllib3.exceptions.ProtocolError("Connection broken", ConnectionResetError(104, "reset"))
+                return super().read(size)
+
+        responses = iter([Resets(data), io.BytesIO(data)])
+
+        def get(url, stream, timeout):
+            r = mock.MagicMock()
+            r.__enter__.return_value.raw = next(responses)
+            return r
+
+        with mock.patch.object(sources.requests, "get", side_effect=get), mock.patch.object(sources.time, "sleep"):
+            got = [(i, a.shape[0]) for i, _, a in sources.iter_tar_audio("https://x/a.tar", lambda name: True)]
+        self.assertEqual([(0, 1000), (1, 2000), (2, 3000)], got)
+
+
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):
         import io

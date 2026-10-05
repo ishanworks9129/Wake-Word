@@ -12,6 +12,7 @@ from typing import Callable, Iterator
 import numpy as np
 import requests
 import soundfile as sf
+import urllib3
 from scipy.signal import resample_poly
 
 from . import SAMPLE_RATE
@@ -108,7 +109,8 @@ def iter_tar_audio(
                         else:
                             next_needed = index + 1
             return
-        except (requests.RequestException, tarfile.ReadError, OSError, EOFError) as e:
+        # Reading r.raw directly raises urllib3's own errors (a reset is ProtocolError), not requests'.
+        except (requests.RequestException, urllib3.exceptions.HTTPError, tarfile.ReadError, OSError, EOFError) as e:
             if attempt == retries - 1:
                 raise
             print(f"stream {url} dropped at member {next_needed} ({e}); reconnecting")
