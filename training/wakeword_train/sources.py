@@ -56,6 +56,9 @@ def to_16k_mono_int16(audio: np.ndarray, sr: int) -> np.ndarray:
     of exactly 1.0 can overshoot slightly, and a value-based check then skipped scaling and produced
     near-silent clips.
     """
+    if audio.dtype == np.int16 and sr == SAMPLE_RATE and (audio.ndim == 1 or audio.shape[1] == 1):
+        # Already the target format: no float copies, which for a 14-hour VoxPopuli session would need ~10 GB.
+        return audio.reshape(-1)
     x = audio.astype(np.float32)
     if np.issubdtype(audio.dtype, np.floating):
         x = x * 32767.0

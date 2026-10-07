@@ -80,6 +80,14 @@ class ConversionTests(unittest.TestCase):
             out = to_16k_mono_int16(x, 22050)
             self.assertGreater(np.abs(out.astype(int)).max(), 20000)
 
+    def test_audio_already_16k_mono_int16_is_not_copied(self):
+        from wakeword_train.sources import to_16k_mono_int16
+
+        x = (np.sin(np.arange(16000) / 3) * 1000).astype(np.int16)[:, None]  # soundfile's always_2d shape
+        out = to_16k_mono_int16(x, 16000)
+        self.assertEqual(out.shape, (16000,))
+        self.assertTrue(np.shares_memory(out, x))
+
     def test_int16_audio_keeps_its_scale(self):
         from wakeword_train.sources import to_16k_mono_int16
 
