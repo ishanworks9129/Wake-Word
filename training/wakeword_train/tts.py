@@ -181,7 +181,11 @@ class ParlerSynth:
     """Parler-TTS (Apache-2.0; trained from scratch on LibriTTS-R and English MLS, both CC BY 4.0).
 
     Speakers are text descriptions, so the number of voices is limited only by how many descriptions are drawn.
+    Generation is capped at max_seconds: a batch runs until every clip in it ends, and Parler sometimes rambles on
+    after short text up to its 30 s limit, which made a T4 take half an hour per 2000 clips.
     """
+
+    max_seconds = 5.0  # wake phrases and near-misses take under 3 s
 
     def __init__(self, model_id: str, descriptions: list[str], use_cuda: bool = False):
         import torch
@@ -193,6 +197,9 @@ class ParlerSynth:
         self.model = ParlerTTSForConditionalGeneration.from_pretrained(model_id).to(self.device).eval()
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.sample_rate = self.model.config.sampling_rate
+        # Decoder steps: one per audio frame, plus one per codebook for the delay pattern.
+        frame_rate = self.model.audio_encoder.config.frame_rate
+        self.max_new_tokens = int(self.max_seconds * frame_rate) + self.model.decoder.config.num_codebooks
         self.descriptions = descriptions
         self.num_speakers = len(descriptions)
 
@@ -206,10 +213,10 @@ class ParlerSynth:
             gen = self.model.generate(
                 input_ids=desc.input_ids, attention_mask=desc.attention_mask,
                 prompt_input_ids=prompt.input_ids, prompt_attention_mask=prompt.attention_mask,
-                do_sample=True, return_dict_in_generate=True,
+                do_sample=True, return_dict_in_generate=True, max_new_tokens=self.max_new_tokens,
             )
         lengths = getattr(gen, "audios_length", None)
-        out = []
+        out: list[np.ndarray] = []
         for i in range(len(items)):
             audio = gen.sequences[i]
             if lengths is not None:
@@ -228,6 +235,8 @@ def generate_parler(synth: ParlerSynth, texts: list[str], n: int, rng: np.random
         for (t, s), audio in zip(items, audios):
             if len(audio) < SAMPLE_RATE // 10 or np.abs(audio.astype(np.int32)).max() < MIN_PEAK:
                 continue
+            if len(audio) > (getattr(synth, "max_seconds", 5.0) - 0.5) * SAMPLE_RATE:
+                continue  # ran into the length cap: it rambled on past the text
             clips.append(audio)
             speakers.append(speaker_offset + s)
             text_idx.append(t)

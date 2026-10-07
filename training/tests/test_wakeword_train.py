@@ -379,6 +379,26 @@ class VoiceGroupTests(unittest.TestCase):
         self.assertEqual("Parler-TTS parler-tts-mini-v1", paths["tts/parler-tts-mini-v1/hard_negative/train"]["source"])
 
 
+class ParlerGenerationTests(unittest.TestCase):
+    def test_batches_drop_clips_that_ramble_to_the_cap_and_report_progress(self):
+        from wakeword_train.tts import generate_parler
+
+        class FakeParler:  # stands in for ParlerSynth: no model needed
+            num_speakers, max_seconds = 5, 5.0
+
+            def synth_batch(self, items, seed):
+                # every third clip "rambles" to 5 s; the rest are 1 s
+                return [np.full(16000 * (5 if i % 3 == 0 else 1), 3000, np.int16) for i, _ in enumerate(items)]
+
+        seen = []
+        clips = generate_parler(FakeParler(), ["hey uno"], 12, np.random.default_rng(0), speaker_offset=3_000_000,
+                                batch=6, progress=lambda done, total: seen.append((done, total)))
+        self.assertEqual(8, len(clips))  # 2 of every 6 rambled
+        self.assertTrue(all(len(clips.clip(i)) == 16000 for i in range(len(clips))))
+        self.assertTrue(all(s >= 3_000_000 for s in clips.speakers))
+        self.assertEqual([(6, 12), (12, 12)], seen)
+
+
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):
         import io

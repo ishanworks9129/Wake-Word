@@ -236,7 +236,11 @@ class Run:
                     rng = np.random.default_rng([cfg.train.seed, hash_id(p.id), 0 if kind == "pos" else 1, part, g])
                     count = min(size, n - part * size)
                     if grp.engine == "parler":
-                        clips = generate_parler(synth, texts, count, rng, speaker_offset=g * GROUP_SPEAKERS)
+                        def report(done, total, label=f"{grp.name} {p.id} {kind}: part {part + 1}/{n_parts}"):
+                            if done % 240 < 24 or done == total:  # about every 10 batches, so it never looks stuck
+                                print(f"  {label}: {done}/{total} clips ({time.time() - started:.0f}s)", flush=True)
+
+                        clips = generate_parler(synth, texts, count, rng, speaker_offset=g * GROUP_SPEAKERS, progress=report)
                     else:
                         clips = generate(_TTS_SYNTHS, texts, count, cfg.tts, rng, speaker_offset=g * GROUP_SPEAKERS)
                     clips.save(part_path)
