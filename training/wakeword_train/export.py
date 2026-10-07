@@ -95,12 +95,13 @@ def write_dataset_manifest(
                      "license": licensed.license, "license_url": licensed.license_url, "retrieved": today,
                      "duration_seconds": round(seconds, 1), "speaker_id": speaker, "release_id": ""})
 
-    for (i, kind, split), seconds in sorted(tts_seconds.items()):
-        v = cfg.tts.voices[i]
+    for (ref, kind, split), seconds in sorted(tts_seconds.items()):
+        v = cfg.tts.voice(ref)
         if seconds > 0:
             # Synthetic speakers are tracked per voice; held-out ones get their own id so they never share a split.
             speaker = (v.name + ("/held-out" if split == "dev" else "")) if kind == "positive" else ""
-            row(f"tts/{v.name}/{kind}/{split}", kind, split, f"Piper voice {v.name}", v.model_url, v, seconds, speaker)
+            engine = "Parler-TTS" if ref >= 10 and cfg.tts.groups[ref // 10 - 1].engine == "parler" else "Piper voice"
+            row(f"tts/{v.name}/{kind}/{split}", kind, split, f"{engine} {v.name}", v.model_url, v, seconds, speaker)
     for src in cfg.negatives:
         if hours.get(src.name, 0.0) > 0:
             row(f"negatives/{src.name}", "negative", MANIFEST_SPLIT[src.split], src.name, src.source_url or src.urls[0],

@@ -67,6 +67,8 @@ print(gpu or 'No GPU: switch the runtime to T4 GPU for training, or set features
         code("""
 #@title Install dependencies
 !pip install -q piper-tts==1.8.0 onnx
+# Parler-TTS for the "parler" voice group (configs/uno.yaml); it pins its own transformers version.
+!pip install -q git+https://github.com/huggingface/parler-tts.git
 # piper-tts pulls in CPU onnxruntime; swap in the GPU build (same Python API).
 !pip uninstall -y -q onnxruntime onnxruntime-gpu && pip install -q onnxruntime-gpu
 import onnxruntime
@@ -162,9 +164,9 @@ else:
 """),
         md("""
 ## (Optional) Retrain a finished run with conversational background audio
-For a finished run (such as `uno-v1`) whose training audio has grown since: the meeting and parliament recordings, or your own meetings' features uploaded to `MyDrive/wakeword/meetings_train` (see `meetings_train` in the configuration; fill in its consent fields there). New runs already include whatever is configured.
+For a finished run (such as `uno-v1`) whose training data has grown since: new background audio (the meeting and parliament recordings, or your own meetings' features in `MyDrive/wakeword/meetings_train`), or new voice groups under `tts: groups:` in the configuration. Only what the run lacks is generated; the voices it already has are kept. New runs already include whatever is configured.
 
-**Needs a T4 GPU.** Set `RUN`, run the cells down to *Configuration*, then tick **RETRAIN** below and run it. It fetches only the training audio the run does not have yet, retrains both models (the voices are reused, so no 3-hour voice step), re-measures them and downloads a new zip: 20 minutes to 1.5 hours depending on how much is new. The models it replaces are kept in `models/previous/<date-time>/`.
+**Needs a T4 GPU.** Set `RUN`, run the cells down to *Configuration*, then tick **RETRAIN** below and run it. It fetches only the training audio and voice clips the run does not have yet, rebuilds the features if the voices changed, retrains both models, re-measures them and downloads a new zip: 20 minutes to about 3 hours depending on how much is new (new voice groups take the longest). The models it replaces are kept in `models/previous/<date-time>/`.
 """),
         code("""
 #@title 11. (Optional) Retrain with conversational background audio
@@ -182,7 +184,7 @@ if RETRAIN:
             shutil.move(f, previous)
         open(marker, 'w').close()
     get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
-                         '--steps negatives,train,evaluate,export --force --negatives-split train')
+                         '--steps negatives,tts,features,train,evaluate,export --force --negatives-split train')
     zip_path = f'{WORK}/export/wakeword_models.zip'
     if not os.path.exists(zip_path) or os.path.getmtime(zip_path) < started:
         raise RuntimeError('Retraining stopped before it finished (see the output above), so there is no new zip. '

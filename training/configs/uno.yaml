@@ -58,6 +58,101 @@ tts:
       # whose Blizzard 2013 recordings are licensed for research. Whether that carries over needs legal review.
       license: CC-BY-4.0
       license_url: https://creativecommons.org/licenses/by/4.0/
+  # More voices, each group with clips of its own; a finished run generates only the groups it lacks.
+  groups:
+    # Piper voices trained from scratch on public-domain recordings: four to train on ...
+    - name: piper_public_domain
+      engine: piper
+      clips_per_phrase: 4000
+      holdout: none
+      voices:
+        - name: en_GB-cori-medium  # UK female, LibriVox
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/medium/en_GB-cori-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/medium/en_GB-cori-medium.onnx.json
+          license: Public-Domain
+          license_url: https://librivox.org/pages/public-domain/
+        - name: en_US-kristin-medium  # US female, LibriVox
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium/en_US-kristin-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium/en_US-kristin-medium.onnx.json
+          license: Public-Domain
+          license_url: https://librivox.org/pages/public-domain/
+        - name: en_US-john-medium  # US male, LibriVox; fine-tuned from kristin
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/john/medium/en_US-john-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/john/medium/en_US-john-medium.onnx.json
+          license: Public-Domain
+          license_url: https://librivox.org/pages/public-domain/
+        - name: en_US-norman-medium  # US male, LibriVox
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/en_US-norman-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/en_US-norman-medium.onnx.json
+          license: Public-Domain
+          license_url: https://librivox.org/pages/public-domain/
+    # ... and one never trained on, to measure how the models do on a voice they have not heard.
+    - name: piper_unseen
+      engine: piper
+      clips_per_phrase: 1000
+      holdout: all
+      voices:
+        - name: en_US-ljspeech-medium  # US female, LJ Speech
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ljspeech/medium/en_US-ljspeech-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ljspeech/medium/en_US-ljspeech-medium.onnx.json
+          license: Public-Domain
+          license_url: https://keithito.com/LJ-Speech-Dataset/
+    # Parler-TTS Mini v1: Apache-2.0 weights trained from scratch on LibriTTS-R and English MLS (both CC BY 4.0).
+    # Speakers are text descriptions (its 34 named voices, then gender, pitch, pace and room), so hundreds of voices.
+    - name: parler
+      engine: parler
+      clips_per_phrase: 4000
+      speakers: 400
+      holdout: speakers
+      voices:
+        - name: parler-tts-mini-v1
+          model_url: parler-tts/parler-tts-mini-v1
+          config_url: ""
+          license: Apache-2.0
+          license_url: https://huggingface.co/parler-tts/parler-tts-mini-v1
+    # Accents (Scottish, Irish, Indian, Canadian and more: about 150 speakers), but every one is fine-tuned from
+    # Piper's lessac voice, like the libritts_r voice above. Off until legal clears the lessac question.
+    - name: piper_lessac_based
+      enabled: false
+      engine: piper
+      clips_per_phrase: 6000
+      holdout: speakers
+      voices:
+        - name: en_GB-vctk-medium  # 109 speakers, UK and other accents
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/vctk/medium/en_GB-vctk-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/vctk/medium/en_GB-vctk-medium.onnx.json
+          license: CC-BY-4.0
+          license_url: https://datashare.ed.ac.uk/handle/10283/3443
+        - name: en_GB-aru-medium  # 12 UK speakers
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/aru/medium/en_GB-aru-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/aru/medium/en_GB-aru-medium.onnx.json
+          license: CC-BY-4.0
+          license_url: https://www.liverpool.ac.uk/architecture/research/acoustics-research-unit/speech-corpus/
+        - name: en_GB-alba-medium  # Scottish female
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json
+          license: CC-BY-4.0
+          license_url: https://datashare.ed.ac.uk/handle/10283/3270
+        - name: en_US-joe-medium  # US male
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/en_US-joe-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/en_US-joe-medium.onnx.json
+          license: CC0-1.0
+          license_url: https://github.com/OHF-Voice/voice-datasets
+        - name: en_US-mike-medium  # US male
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/mike/medium/en_US-mike-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/mike/medium/en_US-mike-medium.onnx.json
+          license: CC0-1.0
+          license_url: https://github.com/OHF-Voice/voice-datasets
+        - name: en_US-sam-medium  # non-binary voice
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium/en_US-sam-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium/en_US-sam-medium.onnx.json
+          license: Apache-2.0
+          license_url: https://github.com/Sam-Accenture-Non-Binary-Voice/non-binary-voice-files
+        - name: en_US-reza_ibrahim-medium  # male, Middle Eastern accent
+          model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/reza_ibrahim/medium/en_US-reza_ibrahim-medium.onnx
+          config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/reza_ibrahim/medium/en_US-reza_ibrahim-medium.onnx.json
+          license: CC0-1.0
+          license_url: https://huggingface.co/datasets/mah92/Ibrahim-Walk-English-Quran-Audio-Dataset
   positives_per_phrase: 20000
   adversarial_per_phrase: 20000
   use_cuda: true

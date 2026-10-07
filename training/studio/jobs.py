@@ -187,6 +187,8 @@ class Studio:
                 node = node.setdefault(p, {})
             node[leaf] = value
         config.setdefault("tts", {})["workers"] = max(1, min(8, (os.cpu_count() or 2) - 1))
+        # Extra voice groups (Parler-TTS, more Piper voices) take hours and need downloads Studio does not do.
+        config["tts"]["groups"] = []
 
         path = self.store.dir(job_id) / "config.yaml"
         path.parent.mkdir(parents=True, exist_ok=True)

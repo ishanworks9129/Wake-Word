@@ -104,6 +104,7 @@ class StudioApiTests(unittest.TestCase):
         self.assertIn("computer", phrase["adversarial_texts"])  # fragment
         self.assertEqual(str(self.studio.base), config["shared_dir"])
         self.assertEqual(120, config["tts"]["positives_per_phrase"])  # tiny profile applied
+        self.assertEqual([], config["tts"]["groups"])  # extra voice groups are for full Colab runs
 
         done = self.wait(job["id"])
         self.assertEqual("done", done["status"], done.get("log"))

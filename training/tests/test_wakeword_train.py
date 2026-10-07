@@ -322,6 +322,63 @@ class EmbeddingsSourceTests(unittest.TestCase):
             self.assertEqual({0.0, 1.0}, set(np.unique(data).tolist()))
 
 
+class VoiceGroupTests(unittest.TestCase):
+    def test_holdout_follows_each_groups_rule(self):
+        from wakeword_train.tts import GROUP_SPEAKERS, held_out_mask
+
+        cfg = load_config(ROOT / "configs" / "uno.yaml").tts  # groups: 1 none, 2 all, 3 every nth speaker
+        speakers = np.array([0, 7, 10, 100020,                            # main voices: every 10th speaker
+                             GROUP_SPEAKERS, GROUP_SPEAKERS + 300000,     # group 1: never held out
+                             2 * GROUP_SPEAKERS, 2 * GROUP_SPEAKERS + 3,  # group 2: always held out
+                             3 * GROUP_SPEAKERS + 20, 3 * GROUP_SPEAKERS + 21])
+        self.assertEqual([True, False, True, True, False, False, True, True, True, False],
+                         held_out_mask(speakers, cfg).tolist())
+        self.assertEqual("en_US-libritts_r-medium", cfg.voice(0).name)
+        self.assertEqual("en_US-norman-medium", cfg.voice(13).name)
+        self.assertEqual("parler-tts-mini-v1", cfg.voice(30).name)
+
+    def test_clips_combine_groups_and_features_notice_new_ones(self):
+        from wakeword_train.pipeline import Run
+        from wakeword_train.tts import GROUP_SPEAKERS, ClipSet
+
+        cfg = load_config(ROOT / "configs" / "uno.yaml")
+        with tempfile.TemporaryDirectory() as d:
+            r = Run(cfg, Path(d))
+            pid = cfg.phrases[0].id
+
+            def save(name, n, offset):
+                clips = [np.full(800 + i, i + 1, np.int16) for i in range(n)]
+                ClipSet.from_clips(clips, offset + np.arange(n), np.zeros(n, int), ["hey uno"]).save(r.work / "clips" / name)
+
+            save(f"{pid}_pos.npz", 3, 0)
+            save(f"{pid}_adv.npz", 2, 0)
+            before = r.clips_signature(pid)
+            self.assertEqual(before, r.clips_signature_main(pid))  # old runs: features stay valid
+            save(f"{pid}_pos@parler.npz", 4, 3 * GROUP_SPEAKERS)
+            combined = r.clips(pid, "pos")
+            self.assertEqual(7, len(combined))
+            self.assertEqual([0, 1, 2] + [3 * GROUP_SPEAKERS + i for i in range(4)], combined.speakers.tolist())
+            self.assertNotEqual(before, r.clips_signature(pid))  # a new group means new features
+
+    def test_manifest_lists_group_voices(self):
+        from data.manifest import read_rows, validate
+        from wakeword_train.export import write_dataset_manifest
+
+        cfg = load_config(ROOT / "configs" / "uno.yaml")
+        hours = {src.name: 0.0 if src.license == "Internal-Consent" else 10.0 for src in cfg.negatives}
+        tts = {(0, "positive", "train"): 3600.0, (12, "positive", "train"): 900.0, (20, "positive", "dev"): 300.0,
+               (30, "positive", "train"): 1800.0, (30, "positive", "dev"): 200.0, (30, "hard_negative", "train"): 1700.0}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "m.csv"
+            write_dataset_manifest(cfg, hours, path, tts, rir_seconds=270.0)
+            rows = read_rows(path)
+            self.assertEqual([], validate(rows).errors)
+        paths = {r["path"]: r for r in rows}
+        self.assertEqual("Public-Domain", paths["tts/en_US-john-medium/positive/train"]["license"])
+        self.assertEqual("dev", paths["tts/en_US-ljspeech-medium/positive/dev"]["split"])
+        self.assertEqual("Parler-TTS parler-tts-mini-v1", paths["tts/parler-tts-mini-v1/hard_negative/train"]["source"])
+
+
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):
         import io

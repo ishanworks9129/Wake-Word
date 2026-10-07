@@ -102,6 +102,7 @@ def generate(
     cfg: TtsConfig,
     rng: np.random.Generator,
     progress=None,
+    speaker_offset: int = 0,
 ) -> ClipSet:
     """n clips cycling through texts, spread across voices and speakers, including held-out speakers.
 
@@ -123,7 +124,7 @@ def generate(
         if len(audio) < SAMPLE_RATE // 10 or np.abs(audio.astype(np.int32)).max() < MIN_PEAK:
             continue  # empty or near-silent output is never a useful example
         clips.append(audio)
-        speakers.append(v * 100000 + speaker)
+        speakers.append(speaker_offset + v * 100000 + speaker)
         text_idx.append(t)
         if progress:
             progress(i + 1, n)
@@ -132,3 +133,104 @@ def generate(
 
 def is_held_out(speakers: np.ndarray, holdout_every_nth: int) -> np.ndarray:
     return (speakers % 100000) % holdout_every_nth == 0
+
+
+GROUP_SPEAKERS = 1_000_000  # speaker ids of voice group g start at g * GROUP_SPEAKERS
+
+
+def held_out_mask(speakers: np.ndarray, cfg: TtsConfig) -> np.ndarray:
+    """Validation speakers: every nth speaker, except in voice groups held out entirely or not at all."""
+    mask = is_held_out(speakers, cfg.holdout_every_nth_speaker)
+    for g, grp in enumerate(cfg.groups, start=1):
+        sel = speakers // GROUP_SPEAKERS == g
+        if grp.holdout == "all":
+            mask[sel] = True
+        elif grp.holdout == "none":
+            mask[sel] = False
+    return mask
+
+
+# Parler-TTS Mini v1's named speakers keep the same voice across generations.
+PARLER_NAMES = ["Laura", "Gary", "Jon", "Lea", "Karen", "Rick", "Brenda", "David", "Eileen", "Jordan", "Mike", "Yann",
+                "Joy", "James", "Eric", "Lauren", "Rose", "Will", "Jason", "Aaron", "Naomie", "Alisa", "Patrick",
+                "Jerry", "Tina", "Jenna", "Bill", "Tom", "Carol", "Barbara", "Rebecca", "Anna", "Bruce", "Emily"]
+
+
+def parler_descriptions(n: int, seed: int = 0) -> list[str]:
+    """n speaker descriptions: the named speakers first, then voices described by gender, pitch, pace and room."""
+    rng = np.random.default_rng(seed)
+    pitch = ["a low-pitched", "a slightly low-pitched", "a moderate-pitched", "a slightly high-pitched", "a high-pitched"]
+    pace = ["slowly", "at a moderate pace", "quite fast", "fast"]
+    style = ["in a monotone way", "with a slightly expressive tone", "in an animated, expressive way", "casually"]
+    room = ["in a very close-sounding environment", "in a confined room", "in a room with some echo",
+            "from a little distance, in a large room"]
+    quality = ["The recording is very clear.", "The recording is clear.", "There is a little background noise.",
+               "The recording is slightly noisy."]
+    out = []
+    for i in range(n):
+        p, a, s, r, q = (x[int(rng.integers(len(x)))] for x in (pitch, pace, style, room, quality))
+        if i < len(PARLER_NAMES):
+            out.append(f"{PARLER_NAMES[i]} speaks {s} {a} {r}. {q}")
+        else:
+            who = "female" if rng.random() < 0.5 else "male"
+            out.append(f"A {who} speaker with {p} voice speaks {s} {a} {r}. {q}")
+    return out
+
+
+class ParlerSynth:
+    """Parler-TTS (Apache-2.0; trained from scratch on LibriTTS-R and English MLS, both CC BY 4.0).
+
+    Speakers are text descriptions, so the number of voices is limited only by how many descriptions are drawn.
+    """
+
+    def __init__(self, model_id: str, descriptions: list[str], use_cuda: bool = False):
+        import torch
+        from parler_tts import ParlerTTSForConditionalGeneration  # only the Parler voice group needs it
+        from transformers import AutoTokenizer
+
+        self.torch = torch
+        self.device = "cuda" if use_cuda and torch.cuda.is_available() else "cpu"
+        self.model = ParlerTTSForConditionalGeneration.from_pretrained(model_id).to(self.device).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.sample_rate = self.model.config.sampling_rate
+        self.descriptions = descriptions
+        self.num_speakers = len(descriptions)
+
+    def synth_batch(self, items: list[tuple[str, int]], seed: int) -> list[np.ndarray]:
+        """(text, speaker) pairs -> int16 16 kHz clips, generated in one batch."""
+        torch = self.torch
+        desc = self.tokenizer([self.descriptions[s] for _, s in items], return_tensors="pt", padding=True).to(self.device)
+        prompt = self.tokenizer([t for t, _ in items], return_tensors="pt", padding=True).to(self.device)
+        torch.manual_seed(seed)
+        with torch.inference_mode():
+            gen = self.model.generate(
+                input_ids=desc.input_ids, attention_mask=desc.attention_mask,
+                prompt_input_ids=prompt.input_ids, prompt_attention_mask=prompt.attention_mask,
+                do_sample=True, return_dict_in_generate=True,
+            )
+        lengths = getattr(gen, "audios_length", None)
+        out = []
+        for i in range(len(items)):
+            audio = gen.sequences[i]
+            if lengths is not None:
+                audio = audio[: int(lengths[i])]
+            out.append(trim_silence(to_16k_mono_int16(audio.float().cpu().numpy(), self.sample_rate)))
+        return out
+
+
+def generate_parler(synth: ParlerSynth, texts: list[str], n: int, rng: np.random.Generator,
+                    speaker_offset: int = 0, batch: int = 24, progress=None) -> ClipSet:
+    """Like generate(), for Parler-TTS: n clips cycling through texts, random described speakers, in batches."""
+    clips, speakers, text_idx = [], [], []
+    for start in range(0, n, batch):
+        items = [(i % len(texts), int(rng.integers(synth.num_speakers))) for i in range(start, min(start + batch, n))]
+        audios = synth.synth_batch([(texts[t], s) for t, s in items], int(rng.integers(2**31)))
+        for (t, s), audio in zip(items, audios):
+            if len(audio) < SAMPLE_RATE // 10 or np.abs(audio.astype(np.int32)).max() < MIN_PEAK:
+                continue
+            clips.append(audio)
+            speakers.append(speaker_offset + s)
+            text_idx.append(t)
+        if progress:
+            progress(min(start + batch, n), n)
+    return ClipSet.from_clips(clips, speakers, text_idx, texts)

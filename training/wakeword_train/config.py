@@ -33,6 +33,24 @@ class VoiceConfig(Licensed):
 
 
 @dataclass
+class VoiceGroup:
+    """More voices on top of tts.voices, with clips of their own (plan 5.2: every commercially licensed voice).
+
+    A run that already has clips generates only the groups it lacks, so voices can be added without redoing the rest.
+    """
+
+    name: str
+    engine: str  # "piper": voices are Piper models; "parler": voices[0] is a Parler-TTS model (Hugging Face id)
+    voices: list[VoiceConfig]
+    clips_per_phrase: int  # positives, and as many near-misses, per phrase
+    # Which speakers are held out for validation: "speakers" (every nth, like tts.voices), "all" (the whole group,
+    # to measure voices never trained on) or "none".
+    holdout: str = "speakers"
+    speakers: int = 0  # parler: how many described voices to draw from
+    enabled: bool = True  # off: kept in the config (e.g. awaiting a licence decision) but not used
+
+
+@dataclass
 class TtsConfig:
     voices: list[VoiceConfig]
     positives_per_phrase: int = 20000
@@ -44,6 +62,17 @@ class TtsConfig:
     use_cuda: bool = False
     part_size: int = 2000  # clips per resumable part
     workers: int = 1  # parallel synthesis processes; parts are the unit of work
+    groups: list[VoiceGroup] = field(default_factory=list)
+
+    @property
+    def active_groups(self) -> list[tuple[int, "VoiceGroup"]]:
+        """(group number, group) for enabled groups; numbers are positions in the config, starting at 1."""
+        return [(g, grp) for g, grp in enumerate(self.groups, start=1) if grp.enabled]
+
+    def voice(self, ref: int) -> VoiceConfig:
+        """The voice behind a clip's speaker id // 100000 (group * 10 + voice index)."""
+        g, v = divmod(ref, 10)
+        return self.voices[v] if g == 0 else self.groups[g - 1].voices[v]
 
 
 @dataclass

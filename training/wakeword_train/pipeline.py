@@ -30,7 +30,7 @@ from .config import AugmentConfig, Config, load_config
 from .features import MIN_EMBED_SAMPLES, FeatureExtractor
 from .sources import download, iter_file_audio, iter_tar_audio, load_rirs
 from .store import EmbeddingStore, FRAMES_PER_HOUR
-from .tts import ClipSet, PiperSynth, generate, is_held_out
+from .tts import GROUP_SPEAKERS, ClipSet, ParlerSynth, PiperSynth, generate, generate_parler, held_out_mask, parler_descriptions
 
 STEPS = ["setup", "preview", "tts", "negatives", "features", "train", "evaluate", "test", "export"]
 SHARED_DIRS = ("assets", "noise", "negatives")
@@ -55,8 +55,9 @@ class Run:
     def asset(self, name: str) -> Path:
         return self.shared / "assets" / name
 
-    def voice_paths(self) -> list[tuple[Path, Path]]:
-        return [(self.asset(f"voices/{v.name}.onnx"), self.asset(f"voices/{v.name}.onnx.json")) for v in self.cfg.tts.voices]
+    def voice_paths(self, voices=None) -> list[tuple[Path, Path]]:
+        voices = self.cfg.tts.voices if voices is None else voices
+        return [(self.asset(f"voices/{v.name}.onnx"), self.asset(f"voices/{v.name}.onnx.json")) for v in voices]
 
     def features(self) -> FeatureExtractor:
         return FeatureExtractor(str(self.asset("melspectrogram.onnx")), str(self.asset("embedding_model.onnx")),
@@ -74,7 +75,29 @@ class Run:
         return Augmenter(cfg or self.cfg.augment, noise, rirs, window or self.cfg.window_samples, seed)
 
     def clips(self, phrase_id: str, kind: str) -> ClipSet:
-        return ClipSet.load(self.work / "clips" / f"{phrase_id}_{kind}.npz")
+        """The phrase's clips of one kind from tts.voices and every enabled voice group that has generated them."""
+        sets = [(name, ClipSet.load(path)) for name, path in self.clip_paths(phrase_id, kind) if path.exists()]
+        if len(sets) == 1:
+            return sets[0][1]
+        parts = [c for _, c in sets]
+        return ClipSet.from_clips([c.clip(i) for c in parts for i in range(len(c))],
+                                  np.concatenate([c.speakers for c in parts]),
+                                  np.concatenate([c.texts for c in parts]), parts[0].text_list)
+
+    def clip_paths(self, phrase_id: str, kind: str) -> list[tuple[str, Path]]:
+        main = ("main", self.work / "clips" / f"{phrase_id}_{kind}.npz")
+        return [main] + [(grp.name, self.work / "clips" / f"{phrase_id}_{kind}@{grp.name}.npz")
+                         for _, grp in self.cfg.tts.active_groups]
+
+    def clips_signature(self, phrase_id: str) -> str:
+        """Which clip sets a phrase's features were made from, so adding a voice group recomputes them."""
+        sets = []
+        for kind in ("pos", "adv"):
+            for name, path in self.clip_paths(phrase_id, kind):
+                if path.exists():
+                    with np.load(path) as z:
+                        sets.append(f"{kind}/{name}:{len(z['offsets']) - 1}")
+        return ",".join(sets)
 
     def hours(self) -> dict[str, float]:
         out = {}
@@ -99,7 +122,8 @@ class Run:
         download(cfg.embedding_url, self.asset("embedding_model.onnx"))
         download(cfg.rir_url, self.asset("rir.zip"))
         download(cfg.cmudict_url, self.asset("cmudict.dict"))
-        for v, (model, config) in zip(cfg.tts.voices, self.voice_paths()):
+        piper_voices = cfg.tts.voices + [v for _, grp in cfg.tts.active_groups if grp.engine == "piper" for v in grp.voices]
+        for v, (model, config) in zip(piper_voices, self.voice_paths(piper_voices)):
             download(v.model_url, model)
             download(v.config_url, config)
         rirs = load_rirs(self.asset("rir.zip"))
@@ -162,6 +186,7 @@ class Run:
                 label, count, seconds = _tts_part(job)
                 print(f"{label} ({count} clips, {seconds:.0f}s)", flush=True)
 
+        self.tts_groups()
         summary = {}
         for phrase_id, kind, texts, final, parts_dir in groups:
             if not final.exists():
@@ -174,6 +199,49 @@ class Run:
                 ).save(final)
             summary[f"{phrase_id}_{kind}"] = len(ClipSet.load(final))
         return summary
+
+    def tts_groups(self) -> None:
+        """Clips for each enabled voice group that does not have them yet, saved per group beside the main clips."""
+        cfg = self.cfg
+        size = cfg.tts.part_size
+        for g, grp in cfg.tts.active_groups:
+            todo = []
+            for p in cfg.phrases:
+                for kind, texts in (("pos", p.tts_texts), ("adv", p.adversarial_texts)):
+                    final = self.work / "clips" / f"{p.id}_{kind}@{grp.name}.npz"
+                    if not final.exists():
+                        todo.append((p, kind, texts, final))
+            if not todo:
+                continue
+            if grp.engine == "parler":
+                synth = ParlerSynth(grp.voices[0].model_url, parler_descriptions(grp.speakers, seed=g), cfg.tts.use_cuda)
+            elif grp.engine == "piper":
+                _init_tts_worker([(str(m), str(c)) for m, c in self.voice_paths(grp.voices)], cfg.tts.use_cuda)
+            else:
+                raise ValueError(f"voice group {grp.name}: unknown engine {grp.engine!r}; use 'piper' or 'parler'")
+            for p, kind, texts, final in todo:
+                parts_dir = final.with_name(final.stem + "_parts")
+                parts_dir.mkdir(exist_ok=True)
+                n = grp.clips_per_phrase
+                n_parts = -(-n // size)
+                for part in range(n_parts):
+                    part_path = parts_dir / f"part_{part:03d}.npz"
+                    if part_path.exists():
+                        continue
+                    started = time.time()
+                    rng = np.random.default_rng([cfg.train.seed, hash_id(p.id), 0 if kind == "pos" else 1, part, g])
+                    count = min(size, n - part * size)
+                    if grp.engine == "parler":
+                        clips = generate_parler(synth, texts, count, rng, speaker_offset=g * GROUP_SPEAKERS)
+                    else:
+                        clips = generate(_TTS_SYNTHS, texts, count, cfg.tts, rng, speaker_offset=g * GROUP_SPEAKERS)
+                    clips.save(part_path)
+                    print(f"{grp.name} {p.id} {kind}: part {part + 1}/{n_parts} ({len(clips)} clips, "
+                          f"{time.time() - started:.0f}s)", flush=True)
+                parts = [ClipSet.load(f) for f in sorted(parts_dir.glob("part_*.npz"))]
+                ClipSet.from_clips([c.clip(i) for c in parts for i in range(len(c))],
+                                   np.concatenate([c.speakers for c in parts]),
+                                   np.concatenate([c.texts for c in parts]), texts).save(final)
 
     def negatives(self) -> dict:
         cfg = self.cfg
@@ -280,8 +348,15 @@ class Run:
         summary = {}
         for p in cfg.phrases:
             aug = self.augmenter(seed=hash_id(p.id))
+            signature = self.clips_signature(p.id)
+            sig_path = self.work / "features" / f"{p.id}.clips.txt"
+            # Features made before signatures existed came from the main clips alone.
+            old = sig_path.read_text() if sig_path.exists() else self.clips_signature_main(p.id)
+            if old != signature:
+                for kind in ("pos", "adv", "valpos"):
+                    (self.work / "features" / f"{p.id}_{kind}.npy").unlink(missing_ok=True)
             pos = self.clips(p.id, "pos")
-            held = is_held_out(pos.speakers, cfg.tts.holdout_every_nth_speaker)
+            held = held_out_mask(pos.speakers, cfg.tts)
             jobs = {
                 "pos": (pos.subset(~held), cfg.augment.copies_per_clip),
                 "adv": (self.clips(p.id, "adv"), cfg.augment.copies_per_clip),
@@ -301,7 +376,17 @@ class Run:
                 data = np.concatenate(feats) if feats else np.empty((0, 16, 96), np.float16)
                 np.save(out, data)
                 summary[f"{p.id}_{kind}"] = int(data.shape[0])
+            sig_path.write_text(signature)
         return summary
+
+    def clips_signature_main(self, phrase_id: str) -> str:
+        sets = []
+        for kind in ("pos", "adv"):
+            path = self.work / "clips" / f"{phrase_id}_{kind}.npz"
+            if path.exists():
+                with np.load(path) as z:
+                    sets.append(f"{kind}/main:{len(z['offsets']) - 1}")
+        return ",".join(sets)
 
     def train_step(self) -> dict:
         import torch
@@ -351,27 +436,32 @@ class Run:
         )
         aug = self.augmenter(seed=hash_id(phrase_id) + 7, cfg=eval_aug, window=EVAL_WINDOW)
         pos = self.clips(phrase_id, "pos")
-        held = pos.subset(is_held_out(pos.speakers, cfg.tts.holdout_every_nth_speaker))
+        held = pos.subset(held_out_mask(pos.speakers, cfg.tts))
         return [aug(held.clip(i), end_offset=EVAL_TRAILING) for i in range(len(held))]
 
     def tts_seconds(self) -> dict[tuple[int, str, str], float]:
-        """(voice index, manifest kind, split) -> seconds of generated clips, for DATASET_MANIFEST.csv."""
+        """(voice ref, manifest kind, split) -> seconds of generated clips, for DATASET_MANIFEST.csv.
+
+        A voice ref is speaker id // 100000: group * 10 + voice index (TtsConfig.voice resolves it).
+        """
         out: dict[tuple[int, str, str], float] = {}
         for p in self.cfg.phrases:
             for kind, manifest_kind in (("pos", "positive"), ("adv", "hard_negative")):
-                path = self.work / "clips" / f"{p.id}_{kind}.npz"
-                if not path.exists():
-                    continue
-                with np.load(path) as z:  # reads only these two arrays, not the audio
-                    lengths, speakers = np.diff(z["offsets"]), z["speakers"]
-                # Held-out speakers' positives are the dev set; every near-miss clip is trained on.
-                held = is_held_out(speakers, self.cfg.tts.holdout_every_nth_speaker) if kind == "pos" else np.zeros(len(speakers), bool)
-                for voice in np.unique(speakers // 100000):
-                    for split, mask in (("train", ~held), ("dev", held)):
-                        sel = (speakers // 100000 == voice) & mask
-                        key = (int(voice), manifest_kind, split)
-                        out[key] = out.get(key, 0.0) + float(lengths[sel].sum()) / SAMPLE_RATE
+                for _, path in self.clip_paths(p.id, kind):
+                    if path.exists():
+                        self._add_tts_seconds(out, path, kind, manifest_kind)
         return out
+
+    def _add_tts_seconds(self, out: dict, path: Path, kind: str, manifest_kind: str) -> None:
+        with np.load(path) as z:  # reads only these two arrays, not the audio
+            lengths, speakers = np.diff(z["offsets"]), z["speakers"]
+        # Held-out speakers' positives are the dev set; every near-miss clip is trained on.
+        held = held_out_mask(speakers, self.cfg.tts) if kind == "pos" else np.zeros(len(speakers), bool)
+        for voice in np.unique(speakers // 100000):
+            for split, mask in (("train", ~held), ("dev", held)):
+                sel = (speakers // 100000 == voice) & mask
+                key = (int(voice), manifest_kind, split)
+                out[key] = out.get(key, 0.0) + float(lengths[sel].sum()) / SAMPLE_RATE
 
     def rir_seconds(self) -> float:
         return sum(len(r) for r in load_rirs(self.asset("rir.zip"))) / SAMPLE_RATE
