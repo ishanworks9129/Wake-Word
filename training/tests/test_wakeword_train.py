@@ -131,6 +131,26 @@ class FeatureTests(unittest.TestCase):
         for chunk in (16000 * 3, 13000, 12512):
             np.testing.assert_allclose(self.fx.embed_long(audio, chunk_samples=chunk), whole, atol=1e-4)
 
+    def test_package_tester_scores_like_the_apps(self):
+        import json
+
+        import onnxruntime as ort
+
+        from wakeword_train.test_package import onnx_scores
+
+        smoke = ROOT.parent / "testdata" / "models" / "smoke"
+        golden = json.loads((smoke / "golden.json").read_text())
+        pkg = json.loads((smoke / "models.json").read_text())
+        audio = np.array(golden["audio_int16"], dtype=np.int16)
+        expected = [c["scores"] for c in golden["chunks"] if "scores" in c]  # streaming runtime, one per chunk
+        emb = self.fx.embed(audio)
+        for kw in pkg["keywords"]:
+            session = ort.InferenceSession(str(smoke / kw["model"]), providers=["CPUExecutionProvider"])
+            got = onnx_scores(session, kw["input"], emb)
+            # Whole-file features (training, evaluation, this tester) differ from the apps' chunk-by-chunk ones by
+            # ~1e-4; on the steepest edge of a detection that moves a score by a few thousandths.
+            np.testing.assert_allclose(got[:len(expected)], [e[kw["id"]] for e in expected], atol=1e-2)
+
     def test_audio_too_short_for_one_embedding_is_skipped(self):
         from wakeword_train.features import MIN_EMBED_SAMPLES
 

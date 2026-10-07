@@ -30,9 +30,11 @@ def decode_media(path: Path) -> np.ndarray:
             audio, sr = sf.read(str(path), dtype="int16", always_2d=True)
             return to_16k_mono_int16(audio, sr)
         raise RuntimeError(f"reading {Path(path).suffix} files needs ffmpeg on the PATH: {path}")
+    # Run from the file's folder with a bare name: works for a Windows ffmpeg.exe called from WSL too.
+    path = Path(path).resolve()
     r = subprocess.run(
-        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"],
-        capture_output=True,
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", path.name, "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"],
+        capture_output=True, cwd=path.parent,
     )
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg could not read {path}: {r.stderr.decode(errors='replace').strip()[-300:]}")
