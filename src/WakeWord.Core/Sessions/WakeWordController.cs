@@ -29,7 +29,8 @@ public sealed record SessionTelemetry(
     TimeSpan AudioSent,
     TimeSpan ConnectLatency);
 
-/// <summary>Receives one record per session (plan 8.6). Sessions closed by <see cref="SessionEndReason.NoTranscript"/> are the false-accept proxy.</summary>
+/// <summary>Receives one record per session (plan 8.6). Sessions closed by <see cref="SessionEndReason.NoTranscript"/> or
+/// <see cref="SessionEndReason.NotConfirmed"/> are the false-accept proxy.</summary>
 public interface ISessionTelemetrySink
 {
     void SessionCompleted(SessionTelemetry record);
@@ -166,7 +167,8 @@ public sealed class WakeWordController : IAsyncDisposable
         session.TranscriptUpdated += (_, update) => TranscriptUpdated?.Invoke(this, update);
         SessionStarted?.Invoke(this, trigger);
 
-        var result = await session.RunAsync(streamFromSample, cancellationToken).ConfigureAwait(false);
+        var confirm = trigger == SessionTrigger.WakeWord && _options.ConfirmWakePhrase;
+        var result = await session.RunAsync(streamFromSample, cancellationToken, confirm).ConfigureAwait(false);
 
         _telemetry?.SessionCompleted(new SessionTelemetry(
             trigger, detection?.Keyword, detection?.Score, result.Reason, result.AudioSent, result.ConnectLatency));

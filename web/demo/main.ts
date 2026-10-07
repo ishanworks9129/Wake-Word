@@ -88,6 +88,7 @@ $("start").onclick = async () => {
       $("session").textContent = "";
       log(`Session ended: ${result.reason}, ${result.audioSentSeconds.toFixed(1)} s sent, connected in ${result.connectLatencyMs} ms` +
         (result.transcript ? `: "${result.transcript}"` : ""));
+      if (result.reason === "not-confirmed") log("False wake: Deepgram did not hear the wake phrase, so the session was closed early.");
       if (isErrorReason(result.reason)) $("session").innerHTML = `<span class="warn">Speech service error (${result.reason}); try again.</span>`;
     };
 

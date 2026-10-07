@@ -13,6 +13,9 @@ public enum SessionEndReason
     /// <summary>Nothing but the wake phrase was heard in time; most likely a false accept.</summary>
     NoTranscript,
 
+    /// <summary>Deepgram's transcript did not contain the wake phrase, so the detector fired on something else.</summary>
+    NotConfirmed,
+
     HardTimeout,
     Cancelled,
     ServerClosed,
@@ -61,7 +64,9 @@ public sealed class DeepgramSession(
 
     /// <param name="streamFromSample">First sample to send, normally the trigger position minus the pre-roll.
     /// Clamped to the oldest sample the ring still holds.</param>
-    public async Task<DeepgramSessionResult> RunAsync(long streamFromSample, CancellationToken cancellationToken)
+    /// <param name="confirmWakePhrase">Wake-word sessions: end with <see cref="SessionEndReason.NotConfirmed"/> unless
+    /// the transcript contains the wake phrase, and pass no text on until it does.</param>
+    public async Task<DeepgramSessionResult> RunAsync(long streamFromSample, CancellationToken cancellationToken, bool confirmWakePhrase = false)
     {
         var position = Math.Max(Math.Max(0, streamFromSample), ring.OldestAvailable);
         var started = _time.GetTimestamp();
@@ -83,7 +88,7 @@ public sealed class DeepgramSession(
         }
 
         var connectLatency = _time.GetElapsedTime(started);
-        var state = new TranscriptState(stripper);
+        var state = new TranscriptState(stripper, confirmWakePhrase);
         var end = new TaskCompletionSource<(SessionEndReason Reason, Exception? Error)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -190,6 +195,9 @@ public sealed class DeepgramSession(
                     case MessageEffect.TranscriptChanged(var update):
                         TranscriptUpdated?.Invoke(this, update);
                         break;
+                    case MessageEffect.NotConfirmed:
+                        end.TrySetResult((SessionEndReason.NotConfirmed, null));
+                        break;
                     case MessageEffect.UtteranceEnded when state.HasFinalSpeech:
                         end.TrySetResult((SessionEndReason.UtteranceEnd, null));
                         break;
@@ -214,20 +222,24 @@ public sealed class DeepgramSession(
         public sealed record TranscriptChanged(TranscriptUpdate Update) : MessageEffect;
 
         public sealed record UtteranceEnded : MessageEffect;
+
+        public sealed record NotConfirmed : MessageEffect;
     }
 
     /// <summary>Accumulates Deepgram results. Touched only by the receive loop until it completes.</summary>
-    private sealed class TranscriptState(WakePhraseStripper stripper)
+    private sealed class TranscriptState(WakePhraseStripper stripper, bool confirmWakePhrase)
     {
         private readonly List<string> _finals = [];
         private volatile bool _hasSpeech;
+        private bool _confirmed = !confirmWakePhrase;
 
         /// <summary>Any non-wake-word words, interim or final. Interim results count so a slow speaker is not cut off.</summary>
         public bool HasSpeech => _hasSpeech;
 
         public bool HasFinalSpeech { get; private set; }
 
-        public string FinalText => stripper.Strip(string.Join(' ', _finals));
+        /// <summary>The command, wake phrase removed; empty if the wake phrase was never confirmed.</summary>
+        public string FinalText => _confirmed ? stripper.Strip(string.Join(' ', _finals)) : string.Empty;
 
         public MessageEffect Apply(string message)
         {
@@ -237,7 +249,7 @@ public sealed class DeepgramSession(
 
             if (type == "UtteranceEnd")
             {
-                return new MessageEffect.UtteranceEnded();
+                return _confirmed || _finals.Count == 0 ? new MessageEffect.UtteranceEnded() : new MessageEffect.NotConfirmed();
             }
 
             if (type != "Results")
@@ -256,6 +268,18 @@ public sealed class DeepgramSession(
             if (isFinal)
             {
                 _finals.Add(transcript);
+            }
+
+            if (!_confirmed)
+            {
+                _confirmed = stripper.Contains(text);
+                if (!_confirmed)
+                {
+                    // Interim text may still be catching up; enough final words without the phrase settle it.
+                    return isFinal && WakePhraseStripper.CountWords(text) >= stripper.WordsToDecide
+                        ? new MessageEffect.NotConfirmed()
+                        : new MessageEffect.None();
+                }
             }
 
             var stripped = stripper.Strip(text);

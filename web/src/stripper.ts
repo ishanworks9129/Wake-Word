@@ -1,33 +1,49 @@
 const WORDS = /[\p{L}\p{N}']+/gu;
-const FILLERS = new Set(["um", "uh", "er", "ah", "oh", "so"]);
 const TRAILING = /^[\s,.!?;:\-—]+/;
 
+export const countWords = (transcript: string) => (transcript.match(WORDS) ?? []).length;
+
 /**
- * Removes the wake phrase (or a known mis-hearing such as "hey you know") from the start of a transcript.
+ * Finds and removes the wake phrase (or a known mis-hearing such as "hey you know") near the start of a
+ * transcript, with up to maxLeadingWords before it (a filler, or speech just before it caught by the pre-roll).
  * Same rules as WakeWord.Core.Transcripts.WakePhraseStripper.
  */
 export class WakePhraseStripper {
   private readonly targets: string[];
   private readonly maxTokens: number;
 
-  constructor(phrases: string[], private readonly maxDistanceRatio = 0.25) {
+  constructor(phrases: string[], private readonly maxDistanceRatio = 0.25, private readonly maxLeadingWords = 3) {
     if (phrases.length === 0) throw new RangeError("At least one phrase is required.");
     this.targets = [...new Set(phrases.map(squash).filter((t) => t.length > 0))];
     this.maxTokens = Math.max(...phrases.map((p) => (p.match(WORDS) ?? []).length)) + 2;
   }
 
+  /** Once a transcript has this many words without the phrase, the phrase is not coming. */
+  get wordsToDecide(): number {
+    return this.maxLeadingWords + this.maxTokens;
+  }
+
   strip(transcript: string): string {
+    const end = this.find(transcript);
+    return end < 0 ? transcript.trim() : transcript.slice(end).replace(TRAILING, "").trimEnd();
+  }
+
+  /** True if the wake phrase (or a known mis-hearing) is among the first words. */
+  contains(transcript: string): boolean {
+    return this.find(transcript) >= 0;
+  }
+
+  /** Index just after the phrase, or -1. */
+  private find(transcript: string): number {
     const words = [...transcript.matchAll(WORDS)];
-    if (words.length === 0) return transcript.trim();
-    let skip = 0;
-    let cut = this.match(words, 0);
-    if (cut < 0 && FILLERS.has(words[0]![0].toLowerCase())) {
-      skip = 1;
-      cut = this.match(words, 1);
+    for (let skip = 0; skip <= this.maxLeadingWords && skip < words.length; skip++) {
+      const cut = this.match(words, skip);
+      if (cut >= 0) {
+        const last = words[skip + cut - 1]!;
+        return last.index! + last[0].length;
+      }
     }
-    if (cut < 0) return transcript.trim();
-    const last = words[skip + cut - 1]!;
-    return transcript.slice(last.index! + last[0].length).replace(TRAILING, "").trimEnd();
+    return -1;
   }
 
   private match(words: RegExpMatchArray[], start: number): number {

@@ -31,6 +31,12 @@ public sealed record WakeWordOptions
 
     public int MaxSessionsPerHour { get; init; } = 60;
 
+    /// <summary>
+    /// End a wake-word session within about a second when Deepgram's transcript does not contain the wake phrase
+    /// (the detector fired on something else), and show no text until it does. Tap-to-talk sessions are never checked.
+    /// </summary>
+    public bool ConfirmWakePhrase { get; init; } = true;
+
     public VadGateOptions Vad { get; init; } = new();
 
     public DeepgramStreamingOptions Deepgram { get; init; } = new();

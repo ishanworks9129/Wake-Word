@@ -1,5 +1,5 @@
 import { PcmOverrunError, type PcmRingBuffer } from "./ring.js";
-import type { WakePhraseStripper } from "./stripper.js";
+import { countWords, type WakePhraseStripper } from "./stripper.js";
 import type { TokenProvider } from "./tokens.js";
 
 /** Query parameters for Deepgram's live endpoint (plan 8.3). */
@@ -63,6 +63,8 @@ export function defaultSessionLimits(): SessionLimits {
 export type SessionEndReason =
   | "utterance-end"
   | "no-transcript"
+  /** Deepgram's transcript did not contain the wake phrase, so the detector fired on something else. */
+  | "not-confirmed"
   | "hard-timeout"
   | "cancelled"
   | "server-closed"
@@ -150,6 +152,7 @@ export class DeepgramSession {
   private ended = false;
   private hasSpeech = false;
   private hasFinalSpeech = false;
+  private confirmed = true;
   private readonly finals: string[] = [];
   private readonly timers: ReturnType<typeof setTimeout>[] = [];
   private finish: ((r: { reason: SessionEndReason; error?: unknown }) => void) | null = null;
@@ -164,8 +167,13 @@ export class DeepgramSession {
     private readonly stripper: WakePhraseStripper,
   ) {}
 
-  /** Runs the session; resolves when it ends. `fromSample` is clamped to what the ring still holds. */
-  async run(fromSample: number): Promise<SessionResult> {
+  /**
+   * Runs the session; resolves when it ends. `fromSample` is clamped to what the ring still holds.
+   * With `confirmWakePhrase` (wake-word sessions), it ends as "not-confirmed" unless the transcript contains the
+   * wake phrase, and passes no text on until it does.
+   */
+  async run(fromSample: number, confirmWakePhrase = false): Promise<SessionResult> {
+    this.confirmed = !confirmWakePhrase;
     this.cursor = Math.max(fromSample, this.ring.oldestAvailable, 0);
     const started = performance.now();
     const outcome = new Promise<{ reason: SessionEndReason; error?: unknown }>((resolve) => { this.finish = resolve; });
@@ -242,15 +250,25 @@ export class DeepgramSession {
     let msg: { type?: string; is_final?: boolean; channel?: { alternatives?: { transcript?: string }[] } };
     try { msg = JSON.parse(text); } catch { return; }
     if (msg.type === "UtteranceEnd") {
-      if (this.hasFinalSpeech) this.end("utterance-end");
+      if (!this.confirmed && this.finals.length > 0) this.end("not-confirmed");
+      else if (this.hasFinalSpeech) this.end("utterance-end");
       return;
     }
     if (msg.type !== "Results") return;
     const transcript = msg.channel?.alternatives?.[0]?.transcript ?? "";
     if (!transcript) return;
     const isFinal = msg.is_final === true;
-    const stripped = this.stripper.strip([...this.finals, transcript].join(" "));
+    const heard = [...this.finals, transcript].join(" ");
     if (isFinal) this.finals.push(transcript);
+    if (!this.confirmed) {
+      this.confirmed = this.stripper.contains(heard);
+      if (!this.confirmed) {
+        // Interim text may still be catching up; enough final words without the phrase settle it.
+        if (isFinal && countWords(heard) >= this.stripper.wordsToDecide) this.end("not-confirmed");
+        return;
+      }
+    }
+    const stripped = this.stripper.strip(heard);
     if (stripped.length > 0) {
       this.hasSpeech = true; // interim words count, so a slow speaker is not cut off
       if (isFinal) this.hasFinalSpeech = true;
@@ -262,7 +280,7 @@ export class DeepgramSession {
     this.ended = true;
     return {
       reason,
-      transcript: this.stripper.strip(this.finals.join(" ")),
+      transcript: this.confirmed ? this.stripper.strip(this.finals.join(" ")) : "",
       audioSentSeconds: this.sent / this.ring.sampleRate,
       connectLatencyMs: Math.round(connectedAt - started),
       error,

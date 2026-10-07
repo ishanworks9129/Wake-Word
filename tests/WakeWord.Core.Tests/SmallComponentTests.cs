@@ -19,8 +19,19 @@ public class WakePhraseStripperTests
     [InlineData("Hey you know", "")]
     [InlineData("What's the weather", "What's the weather")]
     [InlineData("", "")]
+    [InlineData("so anyway, hey UNO, what's the weather", "what's the weather")]
+    [InlineData("you know what I mean", "you know what I mean")]
     public void Strips_the_phrase_and_common_mishearings(string transcript, string expected) =>
         Assert.Equal(expected, _stripper.Strip(transcript));
+
+    [Theory]
+    [InlineData("Hey UNO, what's the weather?", true)]
+    [InlineData("right, okay, hey you know, set a timer", true)]
+    [InlineData("you know what I mean", false)]
+    [InlineData("the build is broken again today, hey UNO", false)] // too late to be what woke it
+    [InlineData("", false)]
+    public void Finds_the_phrase_only_near_the_start(string transcript, bool expected) =>
+        Assert.Equal(expected, _stripper.Contains(transcript));
 }
 
 public class SensitivityTableTests

@@ -49,6 +49,57 @@ describe("DeepgramSession", () => {
     expect(isErrorReason(r.reason)).toBe(false);
   });
 
+  it("wake-word sessions show text only once the phrase is confirmed", async () => {
+    const t = new FakeTransport();
+    const s = session(new PcmRingBuffer(RATE, 10), t);
+    const updates: string[] = [];
+    s.ontranscript = (u) => updates.push(u.text);
+    const run = s.run(0, true);
+    await until(() => t.connected);
+    t.push(FakeTransport.results("hey", false));
+    t.push(FakeTransport.results("Hey UNO, what's the weather?", true));
+    t.push({ type: "UtteranceEnd" });
+    const r = await run;
+    expect(r.reason).toBe("utterance-end");
+    expect(r.transcript).toBe("what's the weather?");
+    expect(updates).toEqual(["what's the weather?"]);
+  });
+
+  it("ends as not-confirmed when the transcript lacks the phrase", async () => {
+    const t = new FakeTransport();
+    const s = session(new PcmRingBuffer(RATE, 10), t);
+    const updates: string[] = [];
+    s.ontranscript = (u) => updates.push(u.text);
+    const run = s.run(0, true);
+    await until(() => t.connected);
+    t.push(FakeTransport.results("you know what I mean, the build is broken again", true));
+    const r = await run;
+    expect(r.reason).toBe("not-confirmed");
+    expect(r.transcript).toBe("");
+    expect(updates).toEqual([]);
+    expect(isErrorReason(r.reason)).toBe(false);
+  });
+
+  it("a short unconfirmed utterance ends as not-confirmed", async () => {
+    const t = new FakeTransport();
+    const run = session(new PcmRingBuffer(RATE, 10), t).run(0, true);
+    await until(() => t.connected);
+    t.push(FakeTransport.results("you know", true));
+    t.push({ type: "UtteranceEnd" });
+    expect((await run).reason).toBe("not-confirmed");
+  });
+
+  it("tap-to-talk sessions are not checked for the phrase", async () => {
+    const t = new FakeTransport();
+    const run = session(new PcmRingBuffer(RATE, 10), t).run(0, false);
+    await until(() => t.connected);
+    t.push(FakeTransport.results("what's the weather in Pune", true));
+    t.push({ type: "UtteranceEnd" });
+    const r = await run;
+    expect(r.reason).toBe("utterance-end");
+    expect(r.transcript).toBe("what's the weather in Pune");
+  });
+
   it("interim speech defers the cutoff but not the hard timeout", async () => {
     const t = new FakeTransport();
     const run = session(new PcmRingBuffer(RATE, 10), t, { noTranscriptCutoffMs: 100, hardTimeoutMs: 400 }).run(0);

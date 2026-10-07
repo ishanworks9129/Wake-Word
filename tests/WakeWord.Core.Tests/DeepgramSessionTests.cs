@@ -75,6 +75,78 @@ public class DeepgramSessionTests
     }
 
     [Fact]
+    public async Task Wake_word_session_shows_text_only_once_the_phrase_is_confirmed()
+    {
+        var ring = new PcmRingBuffer(Rate, TimeSpan.FromSeconds(10));
+        var transport = new FakeTransport();
+        var session = Session(ring, transport);
+        var updates = new List<string>();
+        session.TranscriptUpdated += (_, u) => updates.Add(u.Text);
+        var run = session.RunAsync(0, CancellationToken.None, confirmWakePhrase: true);
+
+        await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transport.Push(FakeTransport.Results("hey", isFinal: false)); // not enough yet to tell
+        transport.Push(FakeTransport.Results("Hey UNO, what's the weather?", isFinal: true));
+        transport.Push(FakeTransport.UtteranceEnd);
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(SessionEndReason.UtteranceEnd, result.Reason);
+        Assert.Equal("what's the weather?", result.Transcript);
+        Assert.Equal(["what's the weather?"], updates);
+    }
+
+    [Fact]
+    public async Task Ends_as_not_confirmed_when_the_transcript_lacks_the_phrase()
+    {
+        var ring = new PcmRingBuffer(Rate, TimeSpan.FromSeconds(10));
+        var transport = new FakeTransport();
+        var session = Session(ring, transport);
+        var updates = new List<string>();
+        session.TranscriptUpdated += (_, u) => updates.Add(u.Text);
+        var run = session.RunAsync(0, CancellationToken.None, confirmWakePhrase: true);
+
+        await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transport.Push(FakeTransport.Results("you know what I mean, the build is broken again", isFinal: true));
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(SessionEndReason.NotConfirmed, result.Reason);
+        Assert.Equal(string.Empty, result.Transcript);
+        Assert.Empty(updates); // nothing flashed on screen
+        Assert.False(result.IsError);
+    }
+
+    [Fact]
+    public async Task A_short_unconfirmed_utterance_ends_as_not_confirmed()
+    {
+        var ring = new PcmRingBuffer(Rate, TimeSpan.FromSeconds(10));
+        var transport = new FakeTransport();
+        var run = Session(ring, transport).RunAsync(0, CancellationToken.None, confirmWakePhrase: true);
+
+        await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transport.Push(FakeTransport.Results("you know", isFinal: true));
+        transport.Push(FakeTransport.UtteranceEnd);
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(SessionEndReason.NotConfirmed, result.Reason);
+    }
+
+    [Fact]
+    public async Task Tap_to_talk_sessions_are_not_checked_for_the_phrase()
+    {
+        var ring = new PcmRingBuffer(Rate, TimeSpan.FromSeconds(10));
+        var transport = new FakeTransport();
+        var run = Session(ring, transport).RunAsync(0, CancellationToken.None, confirmWakePhrase: false);
+
+        await transport.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        transport.Push(FakeTransport.Results("what's the weather in Pune", isFinal: true));
+        transport.Push(FakeTransport.UtteranceEnd);
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(SessionEndReason.UtteranceEnd, result.Reason);
+        Assert.Equal("what's the weather in Pune", result.Transcript);
+    }
+
+    [Fact]
     public async Task Reports_connect_failure_as_a_visible_error()
     {
         var ring = new PcmRingBuffer(Rate, TimeSpan.FromSeconds(10));

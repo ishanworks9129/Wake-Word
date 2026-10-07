@@ -57,7 +57,17 @@ describe("WakePhraseStripper (same cases as C#)", () => {
     ["Hey you know", ""],
     ["What's the weather", "What's the weather"],
     ["", ""],
+    ["so anyway, hey UNO, what's the weather", "what's the weather"],
+    ["you know what I mean", "you know what I mean"],
   ])("%s", (input, expected) => expect(s.strip(input)).toBe(expected));
+
+  it.each([
+    ["Hey UNO, what's the weather?", true],
+    ["right, okay, hey you know, set a timer", true],
+    ["you know what I mean", false],
+    ["the build is broken again today, hey UNO", false],
+    ["", false],
+  ])("contains(%s) is %s", (input, expected) => expect(s.contains(input as string)).toBe(expected));
 });
 
 describe("PcmRingBuffer", () => {

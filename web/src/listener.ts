@@ -42,6 +42,11 @@ export interface ListenerOptions {
   preRollSeconds?: number;
   ringSeconds?: number;
   maxSessionsPerHour?: number;
+  /**
+   * End a wake-word session within about a second when Deepgram's transcript does not contain the wake phrase
+   * (the detector fired on something else), and show no text until it does. Default true; tap-to-talk is never checked.
+   */
+  confirmWakePhrase?: boolean;
   vad?: Partial<VadGateOptions>;
   deepgram?: Partial<DeepgramStreamingOptions>;
   limits?: Partial<SessionLimits>;
@@ -219,7 +224,7 @@ export class WakeWordListener {
     session.ontranscript = (u) => this.ontranscript?.(u);
     this.session = session;
     this.onsessionstart?.(trigger);
-    void session.run(fromSample).then((result) => {
+    void session.run(fromSample, trigger === "wake-word" && (this.options.confirmWakePhrase ?? true)).then((result) => {
       this.session = null;
       this.onsessionend?.({ trigger, keyword: detection?.keyword ?? null, score: detection?.score ?? null, result });
     });
