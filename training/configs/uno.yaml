@@ -54,7 +54,9 @@ tts:
     - name: en_US-libritts_r-medium  # 904 speakers
       model_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
       config_url: https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
-      license: CC-BY-4.0  # MODEL_CARD: trained on LibriTTS-R (openslr.org/141)
+      # MODEL_CARD: trained on LibriTTS-R (openslr.org/141, CC BY 4.0), but fine-tuned from Piper's lessac voice,
+      # whose Blizzard 2013 recordings are licensed for research. Whether that carries over needs legal review.
+      license: CC-BY-4.0
       license_url: https://creativecommons.org/licenses/by/4.0/
   positives_per_phrase: 20000
   adversarial_per_phrase: 20000
