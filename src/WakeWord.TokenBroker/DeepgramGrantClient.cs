@@ -21,8 +21,8 @@ public sealed class DeepgramGrantOptions
 
 public sealed record GrantedToken(string AccessToken, int ExpiresIn);
 
-public sealed class DeepgramGrantException(HttpStatusCode status)
-    : Exception($"Deepgram token grant failed with {(int)status}.")
+public sealed class DeepgramGrantException(HttpStatusCode status, string? detail = null)
+    : Exception($"Deepgram token grant failed with {(int)status}." + (string.IsNullOrWhiteSpace(detail) ? "" : $" Deepgram said: {detail}"))
 {
     public HttpStatusCode Status { get; } = status;
 }
@@ -42,7 +42,9 @@ public sealed class DeepgramGrantClient(HttpClient http, IOptions<DeepgramGrantO
         using var response = await http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new DeepgramGrantException(response.StatusCode);
+            // Deepgram's error body says why (e.g. the key's role lacks the grant permission); it never echoes the key.
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new DeepgramGrantException(response.StatusCode, detail.Length > 300 ? detail[..300] : detail);
         }
 
         var body = await response.Content.ReadFromJsonAsync<GrantResponse>(cancellationToken)
