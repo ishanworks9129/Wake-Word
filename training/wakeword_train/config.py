@@ -49,7 +49,9 @@ class TtsConfig:
 @dataclass
 class NegativeSource(Licensed):
     name: str
-    kind: str  # "tar": each url is a .tar/.tar.gz of audio files; "files": each url is one audio file
+    # "tar": each url is a .tar/.tar.gz of audio files; "files": each url is one audio file; "embeddings": urls[0] is
+    # a folder of .npy features already computed elsewhere (python -m wakeword_train.test_package --export-train)
+    kind: str
     urls: list[str]
     split: str  # "train" or "val"
     max_hours: float
@@ -59,6 +61,7 @@ class NegativeSource(Licensed):
     # idle while long recordings are processed, which would otherwise mean re-streaming from the start.
     download_first: bool = False
     source_url: str = ""
+    release_id: str = ""  # for license Internal-Consent: reference to the participants' consent
 
 
 @dataclass

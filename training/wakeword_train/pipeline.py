@@ -199,11 +199,15 @@ class Run:
                 for index, name, audio in items:
                     # Whole recordings can be hours long (VoxPopuli sessions): keep only what the budget needs.
                     have = store.hours(src.name) + store._buf_frames / FRAMES_PER_HOUR
-                    audio = audio[: int((src.max_hours - have) * 3600 * SAMPLE_RATE) + MIN_EMBED_SAMPLES]
-                    emb = fx.embed_long(audio)
+                    if src.kind == "embeddings":  # features computed elsewhere; the audio never came here
+                        emb = audio[: int((src.max_hours - have) * FRAMES_PER_HOUR)].astype(np.float32)
+                        audio = np.empty(0, np.int16)
+                    else:
+                        audio = audio[: int((src.max_hours - have) * 3600 * SAMPLE_RATE) + MIN_EMBED_SAMPLES]
+                        emb = fx.embed_long(audio)
                     if emb.shape[0]:
                         store.append(src.name, key, index, emb)
-                    if noise_samples < noise_target and any(s in name for s in src.noise_bank):
+                    if audio.shape[0] and noise_samples < noise_target and any(s in name for s in src.noise_bank):
                         noise_buf.append(audio)
                         noise_samples += audio.shape[0]
                         if sum(a.shape[0] for a in noise_buf) > 5 * 60 * SAMPLE_RATE:
@@ -234,19 +238,27 @@ class Run:
         """(progress key, audio iterator) for each part of a source still to read."""
         if src.kind == "files":
             parts = [("files", lambda skip: iter_file_audio(src.urls, skip_members=skip))]
+        elif src.kind == "embeddings":
+            folder = Path(src.urls[0])
+            files = sorted(folder.glob("*.npy")) if folder.is_dir() else []
+            if not files:
+                print(f"{src.name}: no feature files in {folder}; skipping")
+                return
+            parts = [(str(folder), lambda skip: ((i, f.name, np.load(f)) for i, f in enumerate(files) if i >= skip))]
         elif src.kind == "tar":
             accept = (lambda name: not src.include or any(s in name for s in src.include))
             parts = [(url, lambda skip, url=url: iter_tar_audio(url, accept, skip_members=skip, local=self._fetch(src, url)))
                      for url in src.urls]
         else:
-            raise ValueError(f"{src.name}: unknown negatives kind {src.kind!r}; use 'tar' or 'files'")
+            raise ValueError(f"{src.name}: unknown negatives kind {src.kind!r}; use 'tar', 'files' or 'embeddings'")
         for key, open_part in parts:
             if store.hours(src.name) >= src.max_hours:
                 return
             if store.exhausted(src.name, key):
                 continue
             skip = store.source_progress(src.name)["next_member"].get(key, 0)
-            where = f"{len(src.urls)} files from file {skip}" if src.kind == "files" else f"{key} from member {skip}"
+            where = {"files": f"{len(src.urls)} files from file {skip}", "embeddings": f"features in {key} from file {skip}"}.get(
+                src.kind, f"{key} from member {skip}")
             print(f"{src.name}: streaming {where} ({store.hours(src.name):.1f}/{src.max_hours} h)")
             yield key, open_part(skip)
 

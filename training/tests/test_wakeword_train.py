@@ -265,6 +265,63 @@ class PackageTesterTests(unittest.TestCase):
             self.assertAlmostEqual(70 / 3600, second["hours"], delta=0.002)
 
 
+    def test_frozen_split_tests_only_the_held_out_recordings_and_exports_the_rest(self):
+        import json
+        import wave
+
+        from wakeword_train.test_package import main
+
+        smoke = ROOT.parent / "testdata" / "models" / "smoke"
+        rng = np.random.default_rng(2)
+        with tempfile.TemporaryDirectory() as d:
+            rec, out, exp = Path(d) / "meetings", Path(d) / "out", Path(d) / "train_features"
+            rec.mkdir()
+            for i in range(6):
+                with wave.open(str(rec / f"m{i}.wav"), "wb") as w:
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(16000)
+                    w.writeframes((rng.normal(size=16000 * 20) * 3000).astype(np.int16).tobytes())
+            main(["--package", str(smoke), "--folder", str(rec), "--out", str(out), "--train-share", "0.5", "--export-train", str(exp)])
+            split = json.loads((out / "split.json").read_text())
+            self.assertEqual(set(split["train"]) | set(split["test"]), {f"m{i}.wav" for i in range(6)})
+            self.assertFalse(set(split["train"]) & set(split["test"]))
+            self.assertEqual(len(split["train"]), len(list(exp.glob("*.npy"))))
+            self.assertFalse(any("m" in f.stem and ".wav" in f.stem for f in exp.glob("*.npy")))  # hashed names only
+            self.assertEqual(len(split["test"]), json.loads((out / "results.json").read_text())["recordings"])
+            with self.assertRaises(SystemExit):  # the split is frozen
+                main(["--package", str(smoke), "--out", str(out), "--train-share", "0.3"])
+            main(["--package", str(smoke), "--out", str(out)])
+            self.assertEqual(split, json.loads((out / "split.json").read_text()))
+            self.assertEqual(len(split["test"]), json.loads((out / "results.json").read_text())["recordings"])
+
+
+class EmbeddingsSourceTests(unittest.TestCase):
+    def test_negatives_step_reads_exported_features_without_audio(self):
+        import shutil
+
+        from wakeword_train.config import NegativeSource
+        from wakeword_train.pipeline import Run
+
+        smoke = ROOT.parent / "testdata" / "models" / "smoke"
+        with tempfile.TemporaryDirectory() as d:
+            feats = Path(d) / "feats"
+            feats.mkdir()
+            for i, n in enumerate((4500, 9000)):  # 0.1 h and 0.2 h
+                np.save(feats / f"{i:02d}.npy", np.full((n, 96), i, np.float16))
+            cfg = load_config(ROOT / "configs" / "smoke.yaml")
+            cfg.negatives = [NegativeSource(name="meetings_train", kind="embeddings", urls=[str(feats)], split="train",
+                                            max_hours=0.25, license="Internal-Consent", license_url="x", release_id="r")]
+            r = Run(cfg, Path(d) / "work", negatives_split="train")
+            for f in ("melspectrogram.onnx", "embedding_model.onnx"):
+                shutil.copy(smoke / f, r.asset(f))
+            with self.assertRaises(RuntimeError):  # no validation audio in this test
+                r.negatives()
+            data = r.store("train").load()
+            self.assertEqual((11250, 96), data.shape)  # capped at 0.25 h
+            self.assertEqual({0.0, 1.0}, set(np.unique(data).tolist()))
+
+
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):
         import io
@@ -296,13 +353,16 @@ class ConfigTests(unittest.TestCase):
             cfg = load_config(ROOT / "configs" / name)
             self.assertEqual({p.id for p in cfg.phrases}, {"hey_uno", "hello_uno"})
             self.assertTrue(all("NC" not in s.license.upper() for s in cfg.negatives))
-            self.assertTrue(all(s.kind in ("tar", "files") for s in cfg.negatives))
+            self.assertTrue(all(s.kind in ("tar", "files", "embeddings") for s in cfg.negatives))
 
     def test_exported_dataset_manifest_passes_the_license_check(self):
         from data.manifest import read_rows, validate
         from wakeword_train.export import write_dataset_manifest
 
         cfg = load_config(ROOT / "configs" / "uno.yaml")
+        for src in cfg.negatives:
+            if src.license == "Internal-Consent":  # filled in by whoever holds the consent record
+                src.license_url, src.release_id = "https://intranet/consent", "HR-1"
         hours = {src.name: 10.0 for src in cfg.negatives}
         hours[cfg.negatives[0].name] = 0.0  # a source that contributed nothing is left out, not listed at 0 s
         tts = {(0, "positive", "train"): 3600.0, (0, "positive", "dev"): 400.0, (0, "hard_negative", "train"): 3000.0}
@@ -320,7 +380,7 @@ class ConfigTests(unittest.TestCase):
         from wakeword_train.export import write_dataset_manifest
 
         cfg = load_config(ROOT / "configs" / "uno.yaml", {"test.license_url": "https://intranet/consent"})
-        hours = {src.name: 10.0 for src in cfg.negatives}
+        hours = {src.name: 0.0 if src.license == "Internal-Consent" else 10.0 for src in cfg.negatives}  # just the test row
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "m.csv"
             write_dataset_manifest(cfg, hours, path, {(0, "positive", "train"): 60.0}, 270.0, test_hours=30.0)

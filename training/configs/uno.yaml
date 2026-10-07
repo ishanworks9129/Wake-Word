@@ -170,6 +170,17 @@ negatives:
     license: CC-BY-4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
     source_url: https://groups.inf.ed.ac.uk/ami/corpus/
+  # Your own internal meetings, whose participants agreed to training use: features (not audio) exported on your
+  # machine by `python -m wakeword_train.test_package ... --train-share 0.67 --export-train <folder>`, with that folder
+  # uploaded here. The rest of the meetings stay a frozen local test set. Skipped when the folder is missing.
+  - name: meetings_train
+    kind: embeddings
+    split: train
+    max_hours: 100
+    urls: [/content/drive/MyDrive/wakeword/meetings_train]
+    license: Internal-Consent
+    license_url: ""  # fill in: where the participants' consent is recorded
+    release_id: ""  # fill in: reference to that consent or its approval
   - name: librispeech_val
     kind: tar
     split: val

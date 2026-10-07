@@ -162,9 +162,9 @@ else:
 """),
         md("""
 ## (Optional) Retrain a finished run with conversational background audio
-Only for a run whose background audio predates the meeting and parliament recordings in training, such as `uno-v1` (its models false-fire on conversation). New runs already include them, so skip this.
+For a finished run (such as `uno-v1`) whose training audio has grown since: the meeting and parliament recordings, or your own meetings' features uploaded to `MyDrive/wakeword/meetings_train` (see `meetings_train` in the configuration; fill in its consent fields there). New runs already include whatever is configured.
 
-**Needs a T4 GPU.** Set `RUN`, run the cells down to *Configuration*, then tick **RETRAIN** below and run it. It downloads about 115 hours of extra training audio, retrains both models (the voices are reused, so no 3-hour voice step), re-measures them and downloads a new zip: about 1–1.5 hours. The old models are kept in `models/previous/`.
+**Needs a T4 GPU.** Set `RUN`, run the cells down to *Configuration*, then tick **RETRAIN** below and run it. It fetches only the training audio the run does not have yet, retrains both models (the voices are reused, so no 3-hour voice step), re-measures them and downloads a new zip: 20 minutes to 1.5 hours depending on how much is new. The models it replaces are kept in `models/previous/<date-time>/`.
 """),
         code("""
 #@title 11. (Optional) Retrain with conversational background audio
@@ -174,17 +174,20 @@ if RETRAIN:
     if not torch.cuda.is_available():
         raise RuntimeError('Retraining needs a GPU: Runtime -> Change runtime type -> T4 GPU, then run the cells from the top.')
     started = time.time()
-    previous = f'{WORK}/models/previous'
-    os.makedirs(previous, exist_ok=True)
-    if not os.listdir(previous):  # first attempt: set the old models aside; a re-run keeps what it already retrained
+    marker = f'{WORK}/models/RETRAINING'
+    if not os.path.exists(marker):  # a new retrain sets the current models aside; a re-run after a stop resumes instead
+        previous = f'{WORK}/models/previous/{time.strftime("%Y%m%d-%H%M%S")}'
+        os.makedirs(previous, exist_ok=True)
         for f in glob.glob(f'{WORK}/models/*.pt') + glob.glob(f'{WORK}/models/*_history.json'):
             shutil.move(f, previous)
+        open(marker, 'w').close()
     get_ipython().system('cd /content/training && python -m wakeword_train.pipeline --config configs/uno.yaml --work "$WORK" '
                          '--steps negatives,train,evaluate,export --force --negatives-split train')
     zip_path = f'{WORK}/export/wakeword_models.zip'
     if not os.path.exists(zip_path) or os.path.getmtime(zip_path) < started:
         raise RuntimeError('Retraining stopped before it finished (see the output above), so there is no new zip. '
                            'Run this cell again: it resumes where it stopped.')
+    os.remove(marker)
     from google.colab import files
     print(open(f'{WORK}/export/wakeword_models/METRICS.md').read())
     files.download(zip_path)

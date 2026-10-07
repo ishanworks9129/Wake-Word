@@ -105,6 +105,7 @@ def write_dataset_manifest(
         if hours.get(src.name, 0.0) > 0:
             row(f"negatives/{src.name}", "negative", MANIFEST_SPLIT[src.split], src.name, src.source_url or src.urls[0],
                 src, hours[src.name] * 3600)
+            rows[-1]["release_id"] = src.release_id
     if rir_seconds > 0:
         row("rir/mit", "rir", "train", "MIT Acoustical Reverberation Scene Statistics Survey", cfg.rir_url, cfg.rir, rir_seconds)
     if test_hours > 0:  # one aggregate row: file names of internal recordings stay out of the package

@@ -2,12 +2,17 @@
 
     python -m wakeword_train.test_package --package ../models/wakeword --folder "D:/meetings" --out D:/wakeword_test
     python -m wakeword_train.test_package --package <newer package> --out D:/wakeword_test   # recordings no longer needed
+    python -m wakeword_train.test_package --package ... --out D:/wakeword_test --train-share 0.67 --export-train D:/meetings_train
 
 Reports false accepts per hour at every sensitivity in the package's calibration, with the detector rules the
 apps use (no adaptive offset), and lists every fire at the most sensitive setting in fires.csv to check by ear.
 Embeddings are cached in --out (with cache/index.json naming each recording), so a newer package is tested on the
 same recordings in minutes, and without --folder once they are processed: the audio itself can then be deleted.
 Recordings must contain no wake phrase; a meeting where someone says it should be left out.
+
+--train-share splits the recordings once, by whole recording, into a share to train on and the rest to test on, and
+saves the split in --out/split.json. From then on only the test share is tested, and the split never changes, so the
+test stays honest. --export-train writes the training share's features (not audio) for the "embeddings" negatives source.
 """
 
 from __future__ import annotations
@@ -94,12 +99,37 @@ def cached_embeddings(cache: Path, features_id: str) -> list[tuple[str, np.ndarr
     return [(rel, np.load(cache / f"{k}.npy")) for rel, k in entries]
 
 
+def make_split(streams: list[tuple[str, np.ndarray]], train_share: float, seed: int = 0) -> dict[str, list[str]]:
+    """Whole recordings, in a fixed random order, go to training until it holds train_share of the hours."""
+    total = sum(e.shape[0] for _, e in streams)
+    train, frames = [], 0
+    for i in np.random.default_rng(seed).permutation(len(streams)).tolist():
+        if frames >= train_share * total:
+            break
+        train.append(streams[i][0])
+        frames += streams[i][1].shape[0]
+    return {"train": sorted(train), "test": sorted(rel for rel, _ in streams if rel not in set(train))}
+
+
+def export_train(streams: list[tuple[str, np.ndarray]], names: set[str], folder: Path) -> float:
+    """The training share's features as .npy files named by a hash, so no recording names leave this machine."""
+    folder.mkdir(parents=True, exist_ok=True)
+    frames = 0
+    for rel, emb in streams:
+        if rel in names:
+            np.save(folder / (hashlib.sha1(rel.encode()).hexdigest()[:16] + ".npy"), emb)
+            frames += emb.shape[0]
+    return frames / FRAMES_PER_HOUR
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--package", required=True, type=Path, help="unpacked model package (models.json and .onnx files)")
     ap.add_argument("--folder", type=Path,
                     help="recordings with no wake phrase in them, searched recursively; omit to reuse those already processed into --out")
     ap.add_argument("--out", required=True, type=Path, help="where the report, fires.csv and the embedding cache go")
+    ap.add_argument("--train-share", type=float, help="once: put this share of the hours (by whole recording) aside for training")
+    ap.add_argument("--export-train", type=Path, help="write the training share's features here, to upload for training")
     args = ap.parse_args(argv)
 
     pkg = json.loads((args.package / "models.json").read_text(encoding="utf-8"))
@@ -117,6 +147,26 @@ def main(argv: list[str] | None = None) -> None:
         if not streams:
             raise SystemExit(f"no recordings processed with this package's feature models in {args.out / 'cache'}; pass --folder")
         print(f"using {len(streams)} recordings already processed in {args.out / 'cache'}")
+    split_path = args.out / "split.json"
+    if args.train_share is not None:
+        if split_path.exists():
+            raise SystemExit(f"{split_path} exists: the split is frozen so the test stays honest. Drop --train-share.")
+        split_path.write_text(json.dumps(make_split(streams, args.train_share), indent=1), encoding="utf-8")
+    split = json.loads(split_path.read_text(encoding="utf-8")) if split_path.exists() else None
+    held_back = ""
+    if split:
+        train_names = set(split["train"])
+        if args.export_train:
+            h = export_train(streams, train_names, args.export_train)
+            print(f"exported features of {len(train_names)} recordings ({h:.1f} h) for training to {args.export_train}")
+        trained = [s_ for s_ in streams if s_[0] in train_names]
+        streams = [s_ for s_ in streams if s_[0] not in train_names]  # never test on what may be trained on
+        held_back = (f" {len(trained)} other recordings ({sum(e.shape[0] for _, e in trained) / FRAMES_PER_HOUR:.1f} h) are "
+                     "set aside for training and not tested on.")
+        if not streams:
+            raise SystemExit("every recording is in the training share; nothing left to test on")
+    elif args.export_train:
+        raise SystemExit("--export-train needs a split: pass --train-share the first time")
     hours = sum(e.shape[0] for _, e in streams) / FRAMES_PER_HOUR
 
     results, fires = {}, []
@@ -151,7 +201,7 @@ def main(argv: list[str] | None = None) -> None:
     ids = list(results)
     lines = [f"# Test on your own recordings: {len(streams)} recordings, {hours:.1f} h", "",
              f"Package `{pkg.get('run')}` created {pkg.get('created')}. False accepts per hour, 95% upper bound in "
-             "brackets; plan Section 3 targets at most 0.2 (quiet) to 1.0 (loud).", "",
+             f"brackets; plan Section 3 targets at most 0.2 (quiet) to 1.0 (loud).{held_back}", "",
              "| Sensitivity | " + " | ".join(results[i]["phrase"] for i in ids) + " |", "| --- |" + " --- |" * len(ids)]
     for j, r in enumerate(results[ids[0]]["by_sensitivity"]):
         cells = [results[i]["by_sensitivity"][j] for i in ids]
