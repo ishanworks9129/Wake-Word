@@ -1,7 +1,7 @@
 {
   "format": "wakeword-models/1",
   "run": "uno-v0",
-  "created": "2026-10-07T07:54:53+00:00",
+  "created": "2026-10-07T08:34:34+00:00",
   "sample_rate": 16000,
   "frame_samples": 1280,
   "features": {
@@ -24,43 +24,43 @@
       "sensitivity_table": [
         [
           0.0,
-          0.998
+          0.994
         ],
         [
           0.1,
-          0.996
+          0.99
         ],
         [
           0.2,
-          0.95
+          0.94
         ],
         [
           0.3,
-          0.86
+          0.75
         ],
         [
           0.4,
-          0.51
+          0.53
         ],
         [
           0.5,
-          0.2
+          0.33
         ],
         [
           0.6,
-          0.08
+          0.15
         ],
         [
           0.7,
-          0.04
+          0.07
         ],
         [
           0.8,
-          0.02
+          0.03
         ],
         [
           0.9,
-          0.01
+          0.015
         ],
         [
           1.0,
@@ -82,8 +82,8 @@
         "hey uno"
       ],
       "validation": {
-        "threshold": 0.2,
-        "recall": 0.8545176110260337,
+        "threshold": 0.33,
+        "recall": 0.8468606431852986,
         "fa_per_hour": 0.391060643367177,
         "negative_hours": 130.41455555555555,
         "positives": 1959
@@ -99,35 +99,35 @@
       "sensitivity_table": [
         [
           0.0,
-          0.72
+          0.995
         ],
         [
           0.1,
-          0.52
+          0.99
         ],
         [
           0.2,
-          0.18
+          0.93
         ],
         [
           0.3,
-          0.07
+          0.71
         ],
         [
           0.4,
-          0.05
+          0.32
         ],
         [
           0.5,
-          0.03
+          0.08
         ],
         [
           0.6,
-          0.0125
+          0.03
         ],
         [
           0.7,
-          0.01
+          0.0125
         ],
         [
           0.8,
@@ -157,9 +157,9 @@
         "hello uno"
       ],
       "validation": {
-        "threshold": 0.03,
-        "recall": 0.8971734892787524,
-        "fa_per_hour": 0.3297177973487963,
+        "threshold": 0.08,
+        "recall": 0.9234892787524367,
+        "fa_per_hour": 0.3757249318625818,
         "negative_hours": 130.41455555555555,
         "positives": 2052
       }
@@ -170,12 +170,13 @@
     "musan": 108.88,
     "voxpopuli_train": 60.0,
     "ami_train": 54.9,
+    "meetings_train": 25.06,
     "librispeech_val": 18.96,
     "voxpopuli_val": 40.0,
     "ami_val": 71.46
   },
   "notes": [
-    "Provisional v0: positives are synthetic (Piper) only; training negatives are librispeech_train (300 h), musan (109 h), voxpopuli_train (60 h), ami_train (55 h).",
+    "Provisional v0: positives are synthetic (Piper) only; training negatives are librispeech_train (300 h), musan (109 h), voxpopuli_train (60 h), ami_train (55 h), meetings_train (25 h).",
     "Recall is measured on held-out synthetic voices and FA/hour on librispeech_val (19 h), voxpopuli_val (40 h), ami_val (71 h), so real-world numbers will differ. Re-measure on the real-recording test set (plan 5.3) before release.",
     "All training data is commercially licensed; see DATASET_MANIFEST.csv."
   ]

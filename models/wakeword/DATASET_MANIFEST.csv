@@ -6,6 +6,7 @@ negatives/librispeech_train,negative,train,librispeech_train,https://www.openslr
 negatives/musan,negative,train,musan,https://www.openslr.org/17/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-07,391957.4,,
 negatives/voxpopuli_train,negative,train,voxpopuli_train,https://github.com/facebookresearch/voxpopuli,CC0-1.0,https://creativecommons.org/publicdomain/zero/1.0/,2026-10-07,216000.1,,
 negatives/ami_train,negative,train,ami_train,https://groups.inf.ed.ac.uk/ami/corpus/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-07,197652.6,,
+negatives/meetings_train,negative,train,meetings_train,/content/drive/MyDrive/wakeword/meetings_train,Internal-Consent,internal: email 'WW-MEET-2026-10-07: wake word model training on recorded internal meetings',2026-10-07,90224.2,,WW-MEET-2026-10-07
 negatives/librispeech_val,negative,dev,librispeech_val,https://www.openslr.org/12/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-07,68248.9,,
 negatives/voxpopuli_val,negative,dev,voxpopuli_val,https://github.com/facebookresearch/voxpopuli,CC0-1.0,https://creativecommons.org/publicdomain/zero/1.0/,2026-10-07,144000.1,,
 negatives/ami_val,negative,dev,ami_val,https://groups.inf.ed.ac.uk/ami/corpus/,CC-BY-4.0,https://creativecommons.org/licenses/by/4.0/,2026-10-07,257244.6,,
