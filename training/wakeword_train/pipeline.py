@@ -216,6 +216,10 @@ class Run:
             if grp.engine == "parler":
                 synth = ParlerSynth(grp.voices[0].model_url, parler_descriptions(grp.speakers, seed=g), cfg.tts.use_cuda)
             elif grp.engine == "piper":
+                # A run set up before this group was added has not downloaded its voices yet.
+                for v, (model, config) in zip(grp.voices, self.voice_paths(grp.voices)):
+                    download(v.model_url, model)
+                    download(v.config_url, config)
                 _init_tts_worker([(str(m), str(c)) for m, c in self.voice_paths(grp.voices)], cfg.tts.use_cuda)
             else:
                 raise ValueError(f"voice group {grp.name}: unknown engine {grp.engine!r}; use 'piper' or 'parler'")
