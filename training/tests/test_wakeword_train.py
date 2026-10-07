@@ -222,6 +222,49 @@ class TarSourceTests(unittest.TestCase):
             self.assertEqual([(1, 2000), (2, 3000)], got)
 
 
+class PackageTesterTests(unittest.TestCase):
+    def test_retest_from_cache_after_the_recordings_are_deleted(self):
+        import json
+        import shutil
+        import wave
+
+        from wakeword_train.test_package import main
+
+        smoke = ROOT.parent / "testdata" / "models" / "smoke"
+        rng = np.random.default_rng(1)
+        with tempfile.TemporaryDirectory() as d:
+            rec, out = Path(d) / "meetings", Path(d) / "out"
+            (rec / "team").mkdir(parents=True)
+            for name, secs in (("team/standup.wav", 40), ("retro.wav", 30)):
+                with wave.open(str(rec / name), "wb") as w:
+                    w.setnchannels(1)
+                    w.setsampwidth(2)
+                    w.setframerate(16000)
+                    w.writeframes((rng.normal(size=16000 * secs) * 3000).astype(np.int16).tobytes())
+            main(["--package", str(smoke), "--folder", str(rec), "--out", str(out)])
+            first = json.loads((out / "results.json").read_text())
+
+            # Re-processing a changed recording replaces its old entry rather than counting it twice.
+            with wave.open(str(rec / "retro.wav"), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(16000)
+                w.writeframes((rng.normal(size=16000 * 30) * 3000).astype(np.int16).tobytes())
+            main(["--package", str(smoke), "--folder", str(rec), "--out", str(out)])
+            index = json.loads((out / "cache" / "index.json").read_text())
+            self.assertEqual(["retro.wav", "team/standup.wav"], sorted(v["file"] for v in index.values()))
+            self.assertEqual(2, len(list((out / "cache").glob("*.npy"))))
+            second = json.loads((out / "results.json").read_text())
+            fires2 = (out / "fires.csv").read_text()
+
+            shutil.rmtree(rec)  # the audio is gone; the cache alone reproduces the test
+            main(["--package", str(smoke), "--out", str(out)])
+            self.assertEqual(second, json.loads((out / "results.json").read_text()))
+            self.assertEqual(fires2, (out / "fires.csv").read_text())
+            self.assertEqual((2, 2), (first["recordings"], second["recordings"]))
+            self.assertAlmostEqual(70 / 3600, second["hours"], delta=0.002)
+
+
 class FileSourceTests(unittest.TestCase):
     def test_missing_files_are_skipped_and_resume_by_index(self):
         import io

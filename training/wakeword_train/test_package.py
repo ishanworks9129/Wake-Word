@@ -1,10 +1,12 @@
 """Tests a finished model package on your own recordings, on this machine: the audio never leaves it.
 
     python -m wakeword_train.test_package --package ../models/wakeword --folder "D:/meetings" --out D:/wakeword_test
+    python -m wakeword_train.test_package --package <newer package> --out D:/wakeword_test   # recordings no longer needed
 
 Reports false accepts per hour at every sensitivity in the package's calibration, with the detector rules the
 apps use (no adaptive offset), and lists every fire at the most sensitive setting in fires.csv to check by ear.
-Embeddings are cached in --out, so testing a newer package on the same recordings only rescores them.
+Embeddings are cached in --out (with cache/index.json naming each recording), so a newer package is tested on the
+same recordings in minutes, and without --folder once they are processed: the audio itself can then be deleted.
 Recordings must contain no wake phrase; a meeting where someone says it should be left out.
 """
 
@@ -46,11 +48,25 @@ def file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def load_index(cache: Path) -> dict[str, dict]:
+    """cache/index.json: embedding file key -> {"file": recording's path in the folder, "features": feature models id}."""
+    path = cache / "index.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def save_index(cache: Path, index: dict[str, dict]) -> None:
+    tmp = cache / "index.json.tmp"
+    tmp.write_text(json.dumps(index, indent=1, sort_keys=True), encoding="utf-8")
+    tmp.replace(cache / "index.json")
+
+
 def embeddings(files: list[Path], folder: Path, fx: FeatureExtractor, features_id: str, cache: Path) -> list[tuple[str, np.ndarray]]:
     cache.mkdir(parents=True, exist_ok=True)
+    index = load_index(cache)
     streams, started = [], time.time()
     for i, f in enumerate(files):
         st = f.stat()
+        rel = f.relative_to(folder).as_posix()
         key = hashlib.sha1(f"{f.resolve()}|{st.st_size}|{st.st_mtime_ns}|{features_id}".encode()).hexdigest()[:20]
         c = cache / f"{key}.npy"
         if c.exists():
@@ -60,28 +76,47 @@ def embeddings(files: list[Path], folder: Path, fx: FeatureExtractor, features_i
             with open(c.with_suffix(".tmp"), "wb") as out:
                 np.save(out, emb)
             c.with_suffix(".tmp").replace(c)
-        streams.append((f.relative_to(folder).as_posix(), emb))
+        for old in [k for k, v in index.items() if v["file"] == rel and v["features"] == features_id and k != key]:
+            (cache / f"{old}.npy").unlink(missing_ok=True)  # the recording changed since it was processed
+            del index[old]
+        index[key] = {"file": rel, "features": features_id}
+        save_index(cache, index)
+        streams.append((rel, emb))
         hours = sum(e.shape[0] for _, e in streams) / FRAMES_PER_HOUR
         print(f"  {i + 1}/{len(files)} recordings, {hours:.1f} h ({(time.time() - started) / 60:.0f} min)", flush=True)
     return streams
 
 
+def cached_embeddings(cache: Path, features_id: str) -> list[tuple[str, np.ndarray]]:
+    """Recordings processed earlier with these feature models, without needing the recordings themselves."""
+    index = load_index(cache)
+    entries = sorted((v["file"], k) for k, v in index.items() if v["features"] == features_id and (cache / f"{k}.npy").exists())
+    return [(rel, np.load(cache / f"{k}.npy")) for rel, k in entries]
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--package", required=True, type=Path, help="unpacked model package (models.json and .onnx files)")
-    ap.add_argument("--folder", required=True, type=Path, help="recordings with no wake phrase in them, searched recursively")
+    ap.add_argument("--folder", type=Path,
+                    help="recordings with no wake phrase in them, searched recursively; omit to reuse those already processed into --out")
     ap.add_argument("--out", required=True, type=Path, help="where the report, fires.csv and the embedding cache go")
     args = ap.parse_args(argv)
 
     pkg = json.loads((args.package / "models.json").read_text(encoding="utf-8"))
-    files = media_files(args.folder)
-    if not files:
-        raise SystemExit(f"no audio or video files in {args.folder}")
     feats = pkg["features"]
     mel, emb_model = args.package / feats["melspectrogram"], args.package / feats["embedding"]
-    fx = FeatureExtractor(str(mel), str(emb_model))
-    print(f"embedding {len(files)} recordings from {args.folder}")
-    streams = embeddings(files, args.folder, fx, file_hash(mel)[:12] + file_hash(emb_model)[:12], args.out / "cache")
+    features_id = file_hash(mel)[:12] + file_hash(emb_model)[:12]
+    if args.folder:
+        files = media_files(args.folder)
+        if not files:
+            raise SystemExit(f"no audio or video files in {args.folder}")
+        print(f"embedding {len(files)} recordings from {args.folder}")
+        streams = embeddings(files, args.folder, FeatureExtractor(str(mel), str(emb_model)), features_id, args.out / "cache")
+    else:
+        streams = cached_embeddings(args.out / "cache", features_id)
+        if not streams:
+            raise SystemExit(f"no recordings processed with this package's feature models in {args.out / 'cache'}; pass --folder")
+        print(f"using {len(streams)} recordings already processed in {args.out / 'cache'}")
     hours = sum(e.shape[0] for _, e in streams) / FRAMES_PER_HOUR
 
     results, fires = {}, []
@@ -109,12 +144,12 @@ def main(argv: list[str] | None = None) -> None:
         w = csv.DictWriter(f, fieldnames=["keyword", "file", "time", "score"])
         w.writeheader()
         w.writerows(sorted(fires, key=lambda r: (r["file"], r["time"], r["keyword"])))
-    summary = {"package_run": pkg.get("run"), "package_created": pkg.get("created"), "recordings": len(files),
+    summary = {"package_run": pkg.get("run"), "package_created": pkg.get("created"), "recordings": len(streams),
                "hours": hours, "keywords": results}
     (args.out / "results.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
 
     ids = list(results)
-    lines = [f"# Test on your own recordings: {len(files)} recordings, {hours:.1f} h", "",
+    lines = [f"# Test on your own recordings: {len(streams)} recordings, {hours:.1f} h", "",
              f"Package `{pkg.get('run')}` created {pkg.get('created')}. False accepts per hour, 95% upper bound in "
              "brackets; plan Section 3 targets at most 0.2 (quiet) to 1.0 (loud).", "",
              "| Sensitivity | " + " | ".join(results[i]["phrase"] for i in ids) + " |", "| --- |" + " --- |" * len(ids)]
