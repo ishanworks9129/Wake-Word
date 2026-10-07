@@ -69,6 +69,8 @@ print(gpu or 'No GPU: switch the runtime to T4 GPU for training, or set features
 !pip install -q piper-tts==1.8.0 onnx
 # Parler-TTS for the "parler" voice group (configs/uno.yaml); it pins its own transformers version.
 !pip install -q git+https://github.com/huggingface/parler-tts.git
+# Parler's audio library pins protobuf below 5, but the ONNX export needs 6.31+; Parler works with it.
+!pip install -q "protobuf>=6.31.1"
 # piper-tts pulls in CPU onnxruntime; swap in the GPU build (same Python API).
 !pip uninstall -y -q onnxruntime onnxruntime-gpu && pip install -q onnxruntime-gpu
 import onnxruntime
